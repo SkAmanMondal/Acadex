@@ -75,6 +75,27 @@ export const updateSupportRequest = async (req, res) => {
   }
 };
 
+export const deleteSupportRequest = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const request = await SupportRequest.findById(id);
+    if (!request) return sendError(res, 'Support request not found', 404);
+
+    const isOwner = request.student?.toString() === req.user._id?.toString();
+    const isMentor = request.mentor?.toString() === req.user._id?.toString();
+    const isAdmin = ['college_admin', 'super_admin'].includes(req.user.role);
+
+    if (!isOwner && !isMentor && !isAdmin) {
+      return sendError(res, 'Not authorized to delete this support request', 403);
+    }
+
+    await SupportRequest.findByIdAndDelete(id);
+    return sendSuccess(res, 'Support request deleted successfully');
+  } catch (err) {
+    return sendError(res, err.message, 500);
+  }
+};
+
 /**
  * Get all assigned mentees for the logged in faculty mentor
  */

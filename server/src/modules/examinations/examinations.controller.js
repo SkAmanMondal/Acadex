@@ -23,6 +23,18 @@ export const createExamination = async (req, res) => {
   }
 };
 
+export const deleteExamination = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const exam = await Examination.findByIdAndDelete(id);
+    if (!exam) return sendError(res, 'Examination not found', 404);
+    await ExamResult.deleteMany({ examination: id });
+    return sendSuccess(res, 'Examination deleted successfully');
+  } catch (err) {
+    return sendError(res, err.message, 500);
+  }
+};
+
 export const getExaminations = async (req, res) => {
   try {
     const filter = {};

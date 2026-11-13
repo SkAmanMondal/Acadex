@@ -664,3 +664,64 @@ export const getStudentCurriculumAttendance = async (req, res) => {
     return sendError(res, err.message, 500);
   }
 };
+
+// ==================== ACADEMICS DELETION CONTROLLERS ====================
+export const deleteDepartment = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const dept = await Department.findByIdAndDelete(id);
+    if (!dept) return sendError(res, 'Department not found', 404);
+    broadcastEvent('academics_updated', { type: 'department', id, deleted: true });
+    return sendSuccess(res, 'Department deleted successfully');
+  } catch (err) {
+    return sendError(res, err.message, 500);
+  }
+};
+
+export const deleteCourse = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const course = await Course.findByIdAndDelete(id);
+    if (!course) return sendError(res, 'Course not found', 404);
+    broadcastEvent('academics_updated', { type: 'course', id, deleted: true });
+    return sendSuccess(res, 'Course deleted successfully');
+  } catch (err) {
+    return sendError(res, err.message, 500);
+  }
+};
+
+export const deleteBatch = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const batch = await Batch.findByIdAndDelete(id);
+    if (!batch) return sendError(res, 'Batch not found', 404);
+    broadcastEvent('academics_updated', { type: 'batch', id, deleted: true });
+    return sendSuccess(res, 'Batch deleted successfully');
+  } catch (err) {
+    return sendError(res, err.message, 500);
+  }
+};
+
+export const deleteClassroom = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const room = await Classroom.findByIdAndDelete(id);
+    if (!room) return sendError(res, 'Classroom not found', 404);
+    broadcastEvent('academics_updated', { type: 'classroom', id, deleted: true });
+    return sendSuccess(res, 'Classroom deleted successfully');
+  } catch (err) {
+    return sendError(res, err.message, 500);
+  }
+};
+
+export const deleteSubject = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const subject = await Subject.findByIdAndDelete(id);
+    if (!subject) return sendError(res, 'Subject not found', 404);
+    broadcastEvent('academics_updated', { type: 'subject', id, deleted: true });
+    return sendSuccess(res, 'Subject deleted successfully');
+  } catch (err) {
+    return sendError(res, err.message, 500);
+  }
+};

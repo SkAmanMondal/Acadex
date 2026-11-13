@@ -391,6 +391,27 @@ export const getAnnouncements = async (req, res) => {
   }
 };
 
+export const deleteAnnouncement = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const ann = await Announcement.findById(id);
+    if (!ann) return sendError(res, 'Announcement not found', 404);
+
+    if (
+      req.user.role === 'teacher' &&
+      ann.author?.toString() !== req.user._id.toString()
+    ) {
+      return sendError(res, 'Unauthorized to delete this announcement', 403);
+    }
+
+    await Announcement.findByIdAndDelete(id);
+    broadcastEvent('announcement_deleted', { id });
+    return sendSuccess(res, 'Announcement deleted successfully');
+  } catch (err) {
+    return sendError(res, err.message, 500);
+  }
+};
+
 // ==================== DIRECT MESSAGING CONTACTS ====================
 export const getContacts = async (req, res) => {
   try {

@@ -2,6 +2,7 @@ import express from 'express';
 import {
   createAnnouncement,
   getAnnouncements,
+  deleteAnnouncement,
   getBroadcastTargets,
   sendMessage,
   getConversation,
@@ -18,6 +19,7 @@ const router = express.Router();
 // Announcements
 router.get('/announcements', authenticate, getAnnouncements);
 router.post('/announcements', authenticate, authorizeRoles('college_admin', 'super_admin', 'hod', 'teacher'), createAnnouncement);
+router.delete('/announcements/:id', authenticate, authorizeRoles('college_admin', 'super_admin', 'hod', 'teacher'), deleteAnnouncement);
 router.get('/broadcast-targets', authenticate, authorizeRoles('college_admin', 'super_admin', 'hod', 'teacher'), getBroadcastTargets);
 
 // Direct Messages

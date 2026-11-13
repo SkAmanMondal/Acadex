@@ -1,6 +1,7 @@
 import express from 'express';
 import {
   createExamination,
+  deleteExamination,
   getExaminations,
   enterInternalMarks,
   enterSemesterMarks,
@@ -15,6 +16,7 @@ const router = express.Router();
 
 router.get('/', authenticate, getExaminations);
 router.post('/', authenticate, authorizeRoles('college_admin', 'super_admin', 'hod'), createExamination);
+router.delete('/:id', authenticate, authorizeRoles('college_admin', 'super_admin', 'hod'), deleteExamination);
 
 // Marks entry with strict separation of duties
 router.post('/internal-marks', authenticate, authorizeRoles('teacher', 'hod'), enterInternalMarks);
