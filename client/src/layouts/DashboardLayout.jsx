@@ -169,7 +169,7 @@ export default function DashboardLayout() {
   const quickShortcuts = getQuickShortcuts();
 
   return (
-    <div className="fixed inset-0 h-screen h-[100dvh] bg-slate-50/70 flex flex-col font-sans overflow-hidden">
+    <div className="fixed inset-0 w-full h-full max-h-[100dvh] bg-slate-50/70 flex flex-col font-sans overflow-hidden">
       {/* ====================================================================== */}
       {/* 1. MOBILE TOP APP BAR - Clean header for phones (< sm)                 */}
       {/* ====================================================================== */}
@@ -592,7 +592,7 @@ export default function DashboardLayout() {
         <main
           className={`flex-1 min-h-0 flex flex-col ${
             location.pathname === '/messages'
-              ? 'p-1.5 sm:p-2.5 max-w-5xl lg:max-w-6xl w-full mx-auto overflow-hidden'
+              ? 'p-0 sm:p-2 sm:py-2.5 max-w-6xl w-full mx-auto overflow-hidden'
               : 'p-3 sm:p-5 lg:p-8 max-w-7xl w-full mx-auto overflow-y-auto'
           }`}
         >

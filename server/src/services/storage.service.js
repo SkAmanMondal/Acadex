@@ -43,11 +43,25 @@ export const uploadToStorage = async (file, folder = 'general') => {
         stream.end(file.buffer);
       });
 
+      // Generate signed access URL for PDFs / documents to prevent 401 ACL failure
+      let fileUrl = result.secure_url;
+      const fileType = result.format || extension;
+      if (['pdf', 'doc', 'docx', 'ppt', 'pptx', 'xls', 'xlsx'].includes(fileType)) {
+        try {
+          fileUrl = cloudinary.utils.private_download_url(result.public_id, fileType, {
+            resource_type: 'image',
+            type: 'upload',
+          });
+        } catch {
+          fileUrl = result.secure_url;
+        }
+      }
+
       return {
-        fileUrl: result.secure_url,
+        fileUrl,
         cloudinaryPublicId: result.public_id,
         fileSize: result.bytes || file.size,
-        fileType: result.format || extension,
+        fileType,
         storageType: 'cloudinary',
       };
     } catch (err) {
@@ -83,6 +97,25 @@ export const uploadToStorage = async (file, folder = 'general') => {
     fileType: extension,
     storageType: 'local',
   };
+};
+
+/**
+ * Generate authenticated URL for viewing/downloading Cloudinary resources
+ */
+export const getFileAccessUrl = (item) => {
+  if (!item) return '';
+  if (item.storageType === 'cloudinary' && item.cloudinaryPublicId && isCloudinaryConfigured) {
+    const ext = item.fileType || 'pdf';
+    try {
+      return cloudinary.utils.private_download_url(item.cloudinaryPublicId, ext, {
+        resource_type: 'image',
+        type: 'upload',
+      });
+    } catch {
+      return item.fileUrl;
+    }
+  }
+  return item.fileUrl;
 };
 
 /**

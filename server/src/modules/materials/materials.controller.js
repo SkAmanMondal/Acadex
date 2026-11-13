@@ -1,7 +1,7 @@
 import Material from './material.model.js';
 import { sendSuccess, sendError } from '../../utils/response.js';
 import { broadcastEvent } from '../../config/socket.js';
-import { uploadMemory, uploadToStorage, deleteFromStorage } from '../../services/storage.service.js';
+import { uploadMemory, uploadToStorage, deleteFromStorage, getFileAccessUrl } from '../../services/storage.service.js';
 
 // Export upload middleware powered by memory storage (Cloudinary stream + local fallback)
 export const uploadMiddleware = uploadMemory;
@@ -65,7 +65,28 @@ export const getMaterials = async (req, res) => {
       .sort({ unit: 1, createdAt: -1 })
       .lean();
 
-    return sendSuccess(res, 'Materials retrieved successfully', materials);
+    const formatted = materials.map((m) => ({
+      ...m,
+      fileUrl: getFileAccessUrl(m),
+    }));
+
+    return sendSuccess(res, 'Materials retrieved successfully', formatted);
+  } catch (err) {
+    return sendError(res, err.message, 500);
+  }
+};
+
+export const downloadMaterialFile = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const material = await Material.findById(id);
+    if (!material) return sendError(res, 'Material not found', 404);
+
+    material.downloadCount = (material.downloadCount || 0) + 1;
+    await material.save();
+
+    const accessUrl = getFileAccessUrl(material);
+    return res.redirect(accessUrl);
   } catch (err) {
     return sendError(res, err.message, 500);
   }

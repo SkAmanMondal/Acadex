@@ -583,54 +583,16 @@ export default function MessagesPage() {
   const isContactTyping = selectedContact ? Boolean(typingUsers[String(selectedContact._id)]) : false;
 
   return (
-    <div id="acadex-chat-workspace" className="flex-1 min-h-0 flex flex-col overflow-hidden">
-      {/* 1. Header Bar (Shown only when no active contact is open, to maximize chat real estate) */}
-      {!selectedContact && (
-        <div className="bg-gradient-to-r from-blue-700 via-indigo-700 to-brand-700 rounded-2xl px-3 sm:px-4 py-2 sm:py-2.5 text-white shadow-md shadow-indigo-500/10 flex items-center justify-between gap-3 shrink-0 mb-2">
-          <div className="flex items-center gap-2.5 min-w-0">
-            <div className="w-8 h-8 rounded-xl bg-white/15 backdrop-blur-sm flex items-center justify-center shrink-0">
-              <MessageSquare size={16} className="text-white" />
-            </div>
-            <div className="min-w-0">
-              <div className="flex items-center gap-2">
-                <h1 className="text-xs sm:text-sm font-extrabold tracking-tight truncate">
-                  Direct Academic Messaging
-                </h1>
-                {totalUnreadCount > 0 && (
-                  <span className="px-2 py-0.5 rounded-full text-[9px] font-black bg-rose-500 text-white shadow-xs animate-pulse flex items-center gap-1">
-                    <span>{totalUnreadCount} Unread</span>
-                  </span>
-                )}
-                <span className="inline-flex px-2 py-0.5 rounded-full text-[9px] font-bold uppercase tracking-wider bg-emerald-400/20 text-emerald-100 border border-emerald-300/30 items-center gap-1">
-                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-                  <span>Live Sync</span>
-                </span>
-              </div>
-              <p className="text-blue-100 text-[10px] truncate hidden sm:block">
-                Institutional academic communications, mentorship channels & verified faculty inquiry
-              </p>
-            </div>
-          </div>
-
-          <div className="flex items-center gap-2 shrink-0">
-            <div className="bg-white/10 backdrop-blur-md px-3 py-1.5 rounded-xl border border-white/20 flex items-center gap-2">
-              <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping" />
-              <span className="text-[11px] font-bold text-white">{onlineCount}</span>
-              <span className="text-[10px] text-indigo-100 hidden sm:inline">Online</span>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* 2. Main Chat Workspace Card (Full Height, Left Scrollable, Right Fixed) */}
-      <div className="flex-1 min-h-0 bg-white rounded-xl sm:rounded-2xl border border-slate-200/80 shadow-xs overflow-hidden flex flex-row">
-        {/* Left: Scrollable Contacts List Panel (Full-width on mobile when no contact selected, side-by-side on desktop) */}
+    <div id="acadex-chat-workspace" className="flex-1 min-h-0 flex flex-col overflow-hidden w-full">
+      {/* Main Chat Workspace Card (Full Height, Left Scrollable Contacts Roster, Right Fixed Conversation Panel) */}
+      <div className="flex-1 min-h-0 bg-white rounded-none sm:rounded-2xl border-0 sm:border border-slate-200/80 shadow-xs overflow-hidden flex flex-row">
+        {/* Left: Scrollable Contacts List Panel (Full-width on mobile when in roster view, side-by-side on desktop) */}
         <div
           className={`${
-            selectedContact ? 'hidden sm:flex' : 'flex'
+            mobileChatOpen ? 'hidden' : 'flex'
           } ${
             desktopContactsOpen ? 'sm:flex' : 'sm:hidden'
-          } w-full sm:w-64 md:w-72 lg:w-80 shrink-0 border-r border-slate-200/80 flex-col bg-slate-50/50 min-h-0 overflow-hidden transition-all duration-150`}
+          } w-full sm:w-72 lg:w-80 shrink-0 border-r border-slate-200/80 flex-col bg-slate-50/50 min-h-0 overflow-hidden transition-all duration-150`}
         >
           {/* Contacts Header: Status & Online Counter */}
           <div className="px-3.5 py-2.5 border-b border-slate-100 flex items-center justify-between bg-white shrink-0">
@@ -1010,8 +972,8 @@ export default function MessagesPage() {
         {/* Right: Fixed Chat Panel (Full-width on mobile when active) */}
         <div
           className={`${
-            selectedContact ? 'flex' : 'hidden sm:flex'
-          } flex-1 min-w-0 flex-col bg-white overflow-hidden relative`}
+            mobileChatOpen ? 'flex' : 'hidden'
+          } sm:flex flex-1 min-w-0 flex-col bg-white overflow-hidden relative`}
         >
           {selectedContact ? (
             <>
@@ -1021,7 +983,12 @@ export default function MessagesPage() {
                   {/* Mobile Back Button: Return to Contacts List */}
                   <button
                     type="button"
-                    onClick={() => setSelectedContact(null)}
+                    onClick={() => {
+                      setMobileChatOpen(false);
+                      if (typeof window !== 'undefined' && window.innerWidth < 640) {
+                        setSelectedContact(null);
+                      }
+                    }}
                     className="sm:hidden inline-flex items-center gap-1 p-1.5 -ml-1 text-slate-600 hover:text-brand-600 hover:bg-brand-50 rounded-xl transition cursor-pointer shrink-0"
                     title="Back to Contact List"
                   >
@@ -1249,7 +1216,7 @@ export default function MessagesPage() {
               {/* Fixed Chat Input Footer (Pinned at bottom of chat area) */}
               <form
                 onSubmit={handleSendMessage}
-                className="p-2 sm:p-2.5 border-t border-slate-200/80 bg-white flex items-center gap-2 shrink-0 z-10"
+                className="p-2 sm:p-2.5 border-t border-slate-200/80 bg-white flex items-center gap-2 shrink-0 z-10 pb-[calc(0.5rem+env(safe-area-inset-bottom,0px))]"
               >
                 <input
                   type="text"
@@ -1257,6 +1224,7 @@ export default function MessagesPage() {
                   onChange={handleInputChange}
                   onFocus={handleInputFocus}
                   placeholder={`Write your message to ${selectedContact.name}...`}
+                  autoComplete="off"
                   className="flex-1 px-3.5 py-2 text-xs sm:text-[13px] border border-slate-200 rounded-xl focus:ring-2 focus:ring-brand-500 outline-none bg-slate-50/70 focus:bg-white transition"
                 />
                 <button

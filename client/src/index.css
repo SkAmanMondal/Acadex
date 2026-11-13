@@ -57,12 +57,14 @@
   }
 }
 
-/* Prevent bounce / layout displacement when typing in chat */
+/* Responsive, flex-fill Chat Workspace (Zero-displacement cross-browser layout) */
 #acadex-chat-workspace {
-  height: 100% !important;
-  max-height: 100% !important;
+  display: flex !important;
+  flex-direction: column !important;
+  flex: 1 1 0% !important;
+  min-height: 0 !important;
+  width: 100% !important;
   overflow: hidden !important;
-  contain: layout;
 }
 
 /* Universal SVG baseline protection across all rendering engines */
