@@ -169,7 +169,7 @@ export default function DashboardLayout() {
   const quickShortcuts = getQuickShortcuts();
 
   return (
-    <div className="h-screen h-[100dvh] bg-slate-50/70 flex flex-col font-sans overflow-hidden">
+    <div className="fixed inset-0 h-screen h-[100dvh] bg-slate-50/70 flex flex-col font-sans overflow-hidden">
       {/* ====================================================================== */}
       {/* 1. MOBILE TOP APP BAR - Clean header for phones (< sm)                 */}
       {/* ====================================================================== */}
@@ -586,15 +586,15 @@ export default function DashboardLayout() {
         className={`flex-1 pl-0 ${
           desktopSidebarOpen ? 'sm:pl-64 lg:pl-72' : 'sm:pl-16'
         } min-h-0 ${
-          location.pathname === '/messages' ? 'overflow-hidden h-full flex flex-col pb-0' : 'overflow-y-auto pb-20 sm:pb-0'
+          location.pathname === '/messages' ? 'overflow-hidden flex flex-col pb-0' : 'overflow-y-auto pb-20 sm:pb-0'
         } flex flex-col min-w-0 transition-all duration-200`}
       >
         <main
-          className={`flex-1 ${
+          className={`flex-1 min-h-0 flex flex-col ${
             location.pathname === '/messages'
-              ? 'p-1.5 sm:p-3 h-full min-h-0 flex flex-col'
-              : 'p-3 sm:p-5 lg:p-8'
-          } max-w-7xl w-full mx-auto`}
+              ? 'p-1.5 sm:p-2.5 max-w-5xl lg:max-w-6xl w-full mx-auto overflow-hidden'
+              : 'p-3 sm:p-5 lg:p-8 max-w-7xl w-full mx-auto overflow-y-auto'
+          }`}
         >
           <Outlet />
         </main>

@@ -67,11 +67,25 @@ export default function MessagesPage() {
   const [searchParams] = useSearchParams();
   const targetContactId = location.state?.contactId || searchParams.get('contactId');
 
+  const chatFeedRef = useRef(null);
   const messagesEndRef = useRef(null);
   const typingTimeoutRef = useRef(null);
 
   const scrollToBottom = useCallback((smooth = true) => {
-    messagesEndRef.current?.scrollIntoView({ behavior: smooth ? 'smooth' : 'auto' });
+    if (chatFeedRef.current) {
+      const scrollTarget = chatFeedRef.current.scrollHeight;
+      if (smooth) {
+        chatFeedRef.current.scrollTo({ top: scrollTarget, behavior: 'smooth' });
+      } else {
+        chatFeedRef.current.scrollTop = scrollTarget;
+      }
+    }
+  }, []);
+
+  const handleInputFocus = useCallback(() => {
+    if (chatFeedRef.current) {
+      chatFeedRef.current.scrollTop = chatFeedRef.current.scrollHeight;
+    }
   }, []);
 
   // Time formatter helper
@@ -569,55 +583,74 @@ export default function MessagesPage() {
   const isContactTyping = selectedContact ? Boolean(typingUsers[String(selectedContact._id)]) : false;
 
   return (
-    <div className="flex-1 min-h-0 h-full flex flex-col space-y-2 overflow-hidden">
-      {/* 1. Compact Header Bar (Hidden on mobile when chat conversation is active to maximize screen) */}
-      <div className={`${selectedContact ? 'hidden sm:flex' : 'flex'} bg-gradient-to-r from-blue-700 via-indigo-700 to-brand-700 rounded-2xl px-3 sm:px-4 py-2 sm:py-2.5 text-white shadow-md shadow-indigo-500/10 items-center justify-between gap-3 shrink-0`}>
-        <div className="flex items-center gap-2.5 min-w-0">
-          <div className="w-8 h-8 rounded-xl bg-white/15 backdrop-blur-sm flex items-center justify-center shrink-0">
-            <MessageSquare size={16} className="text-white" />
-          </div>
-          <div className="min-w-0">
-            <div className="flex items-center gap-2">
-              <h1 className="text-xs sm:text-sm font-extrabold tracking-tight truncate">
-                Direct Academic Messaging & Doubt Resolution
-              </h1>
-              {totalUnreadCount > 0 && (
-                <span className="px-2 py-0.5 rounded-full text-[9px] font-black bg-rose-500 text-white shadow-xs animate-pulse flex items-center gap-1">
-                  <span>{totalUnreadCount} Unread</span>
-                </span>
-              )}
-              <span className="inline-flex px-2 py-0.5 rounded-full text-[9px] font-bold uppercase tracking-wider bg-emerald-400/20 text-emerald-100 border border-emerald-300/30 items-center gap-1">
-                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-                <span>Live Sync</span>
-              </span>
+    <div id="acadex-chat-workspace" className="flex-1 min-h-0 flex flex-col overflow-hidden">
+      {/* 1. Header Bar (Shown only when no active contact is open, to maximize chat real estate) */}
+      {!selectedContact && (
+        <div className="bg-gradient-to-r from-blue-700 via-indigo-700 to-brand-700 rounded-2xl px-3 sm:px-4 py-2 sm:py-2.5 text-white shadow-md shadow-indigo-500/10 flex items-center justify-between gap-3 shrink-0 mb-2">
+          <div className="flex items-center gap-2.5 min-w-0">
+            <div className="w-8 h-8 rounded-xl bg-white/15 backdrop-blur-sm flex items-center justify-center shrink-0">
+              <MessageSquare size={16} className="text-white" />
             </div>
-            <p className="text-blue-100 text-[10px] truncate hidden sm:block">
-              Institutional academic communications, mentorship channels & verified faculty inquiry
-            </p>
+            <div className="min-w-0">
+              <div className="flex items-center gap-2">
+                <h1 className="text-xs sm:text-sm font-extrabold tracking-tight truncate">
+                  Direct Academic Messaging
+                </h1>
+                {totalUnreadCount > 0 && (
+                  <span className="px-2 py-0.5 rounded-full text-[9px] font-black bg-rose-500 text-white shadow-xs animate-pulse flex items-center gap-1">
+                    <span>{totalUnreadCount} Unread</span>
+                  </span>
+                )}
+                <span className="inline-flex px-2 py-0.5 rounded-full text-[9px] font-bold uppercase tracking-wider bg-emerald-400/20 text-emerald-100 border border-emerald-300/30 items-center gap-1">
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                  <span>Live Sync</span>
+                </span>
+              </div>
+              <p className="text-blue-100 text-[10px] truncate hidden sm:block">
+                Institutional academic communications, mentorship channels & verified faculty inquiry
+              </p>
+            </div>
           </div>
-        </div>
 
-        <div className="flex items-center gap-2 shrink-0">
-          <div className="bg-white/10 backdrop-blur-md px-3 py-1.5 rounded-xl border border-white/20 flex items-center gap-2">
-            <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping" />
-            <span className="text-[11px] font-bold text-white">{onlineCount}</span>
-            <span className="text-[10px] text-indigo-100 hidden sm:inline">Online Now</span>
+          <div className="flex items-center gap-2 shrink-0">
+            <div className="bg-white/10 backdrop-blur-md px-3 py-1.5 rounded-xl border border-white/20 flex items-center gap-2">
+              <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping" />
+              <span className="text-[11px] font-bold text-white">{onlineCount}</span>
+              <span className="text-[10px] text-indigo-100 hidden sm:inline">Online</span>
+            </div>
           </div>
         </div>
-      </div>
+      )}
 
       {/* 2. Main Chat Workspace Card (Full Height, Left Scrollable, Right Fixed) */}
-      <div className="flex-1 min-h-0 bg-white rounded-2xl sm:rounded-3xl border border-slate-200/80 shadow-sm overflow-hidden flex flex-row">
+      <div className="flex-1 min-h-0 bg-white rounded-xl sm:rounded-2xl border border-slate-200/80 shadow-xs overflow-hidden flex flex-row">
         {/* Left: Scrollable Contacts List Panel (Full-width on mobile when no contact selected, side-by-side on desktop) */}
         <div
           className={`${
             selectedContact ? 'hidden sm:flex' : 'flex'
           } ${
             desktopContactsOpen ? 'sm:flex' : 'sm:hidden'
-          } w-full sm:w-72 md:w-80 lg:w-96 shrink-0 border-r border-slate-200/80 flex-col bg-slate-50/50 h-full min-h-0 overflow-hidden transition-all duration-150`}
+          } w-full sm:w-64 md:w-72 lg:w-80 shrink-0 border-r border-slate-200/80 flex-col bg-slate-50/50 min-h-0 overflow-hidden transition-all duration-150`}
         >
+          {/* Contacts Header: Status & Online Counter */}
+          <div className="px-3.5 py-2.5 border-b border-slate-100 flex items-center justify-between bg-white shrink-0">
+            <div className="flex items-center gap-2 min-w-0">
+              <MessageSquare size={15} className="text-brand-600 shrink-0" />
+              <span className="text-xs font-black text-slate-800 tracking-tight">Chats</span>
+              {totalUnreadCount > 0 && (
+                <span className="px-1.5 py-0.2 rounded-full text-[9px] font-black bg-rose-500 text-white">
+                  {totalUnreadCount}
+                </span>
+              )}
+            </div>
+            <div className="flex items-center gap-1.5 text-[10px] font-bold text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200/60 shrink-0">
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+              <span>{onlineCount} Online</span>
+            </div>
+          </div>
+
           {/* Top Search Bar & Multi-Factor Filters (Shrink-0) */}
-          <div className="p-3 border-b border-slate-200/80 space-y-2 shrink-0 bg-white">
+          <div className="p-2.5 sm:p-3 border-b border-slate-200/80 space-y-2 shrink-0 bg-white">
             <div className="relative">
               <Search size={14} className="absolute left-3 top-2.5 text-slate-400" />
               <input
@@ -978,12 +1011,12 @@ export default function MessagesPage() {
         <div
           className={`${
             selectedContact ? 'flex' : 'hidden sm:flex'
-          } flex-1 min-w-0 flex-col h-full bg-white overflow-hidden relative`}
+          } flex-1 min-w-0 flex-col bg-white overflow-hidden relative`}
         >
           {selectedContact ? (
             <>
               {/* Fixed Chat Header (Pinned at top of chat area) */}
-              <div className="px-3 sm:px-4 py-2 sm:py-2.5 border-b border-slate-200/80 flex items-center justify-between bg-white shadow-xs shrink-0 z-10">
+              <div className="px-3 sm:px-4 py-2 border-b border-slate-200/80 flex items-center justify-between bg-white shadow-2xs shrink-0 z-10">
                 <div className="flex items-center gap-2 sm:gap-2.5 min-w-0">
                   {/* Mobile Back Button: Return to Contacts List */}
                   <button
@@ -1121,7 +1154,10 @@ export default function MessagesPage() {
               )}
 
               {/* Chat Messages Feed (Scrollable in middle, header and footer remain fixed) */}
-              <div className="flex-1 min-h-0 overflow-y-auto p-3.5 sm:p-4 space-y-3 bg-slate-50/40">
+              <div
+                ref={chatFeedRef}
+                className="flex-1 min-h-0 overflow-y-auto p-3 sm:p-4 space-y-2.5 bg-slate-50/40"
+              >
                 {displayedMessages.map((msg) => {
                   const isMine =
                     (msg.sender?._id || msg.sender)?.toString() === user?._id?.toString();
@@ -1132,7 +1168,7 @@ export default function MessagesPage() {
                       className={`flex flex-col ${isMine ? 'items-end' : 'items-start'}`}
                     >
                       <div
-                        className={`max-w-[78%] rounded-2xl p-3 text-xs leading-relaxed shadow-xs transition-all ${
+                        className={`max-w-[85%] sm:max-w-md md:max-w-lg lg:max-w-xl rounded-2xl px-3.5 py-2 text-xs sm:text-[13px] leading-relaxed shadow-xs transition-all ${
                           isMine
                             ? 'bg-gradient-to-r from-brand-600 to-indigo-600 text-white rounded-br-xs shadow-brand-500/10'
                             : 'bg-white border border-slate-200/80 text-slate-800 rounded-bl-xs'
@@ -1213,19 +1249,20 @@ export default function MessagesPage() {
               {/* Fixed Chat Input Footer (Pinned at bottom of chat area) */}
               <form
                 onSubmit={handleSendMessage}
-                className="p-2.5 sm:p-3 border-t border-slate-200/80 bg-white flex items-center gap-2 shrink-0 z-10"
+                className="p-2 sm:p-2.5 border-t border-slate-200/80 bg-white flex items-center gap-2 shrink-0 z-10"
               >
                 <input
                   type="text"
                   value={inputText}
                   onChange={handleInputChange}
+                  onFocus={handleInputFocus}
                   placeholder={`Write your message to ${selectedContact.name}...`}
-                  className="flex-1 px-3.5 py-2 text-xs border border-slate-200 rounded-xl focus:ring-2 focus:ring-brand-500 outline-none bg-slate-50/60"
+                  className="flex-1 px-3.5 py-2 text-xs sm:text-[13px] border border-slate-200 rounded-xl focus:ring-2 focus:ring-brand-500 outline-none bg-slate-50/70 focus:bg-white transition"
                 />
                 <button
                   type="submit"
                   disabled={sending || !inputText.trim()}
-                  className="px-4 py-2 rounded-xl bg-gradient-to-r from-brand-600 to-indigo-600 hover:from-brand-500 hover:to-indigo-500 text-white text-xs font-bold shadow-xs hover:shadow transition cursor-pointer disabled:opacity-40 flex items-center gap-1.5 shrink-0"
+                  className="px-3.5 sm:px-4 py-2 rounded-xl bg-gradient-to-r from-brand-600 to-indigo-600 hover:from-brand-500 hover:to-indigo-500 text-white text-xs font-bold shadow-xs hover:shadow transition cursor-pointer disabled:opacity-40 flex items-center gap-1.5 shrink-0"
                 >
                   <Send size={13} className="shrink-0" />
                   <span className="hidden sm:inline">Send</span>
