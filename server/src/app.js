@@ -55,8 +55,9 @@ app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 app.use(cookieParser());
 
-// Static file serving for uploaded files
+// Static file serving for uploaded files (handles both local dev and production paths)
 app.use('/uploads', express.static(path.resolve('uploads')));
+app.use('/uploads', express.static(path.resolve('../uploads')));
 
 // Health check endpoint
 app.get('/api/health', (req, res) => {

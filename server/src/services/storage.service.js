@@ -24,7 +24,7 @@ export const uploadToStorage = async (file, folder = 'general') => {
 
   const extension = path.extname(file.originalname).replace('.', '').toLowerCase();
 
-  // 1. Try Cloudinary if configured
+  // 1. Upload to Cloudinary if configured
   if (isCloudinaryConfigured) {
     try {
       const result = await new Promise((resolve, reject) => {
@@ -51,7 +51,17 @@ export const uploadToStorage = async (file, folder = 'general') => {
         storageType: 'cloudinary',
       };
     } catch (err) {
-      console.warn('[StorageService] Cloudinary upload failed, falling back to local storage:', err.message);
+      console.error('[StorageService] Cloudinary upload rejected:', err.message);
+      if (
+        err.http_code === 403 ||
+        err.message?.includes('missing permissions') ||
+        err.message?.includes('actions=["create"]')
+      ) {
+        throw new Error(
+          'Cloudinary upload rejected: Your API Key is missing "Write/Create" permissions in Cloudinary. Please edit your key in Cloudinary Console or use your Master API Key.'
+        );
+      }
+      throw new Error(`Cloudinary upload failed: ${err.message || 'Unknown error'}`);
     }
   }
 
