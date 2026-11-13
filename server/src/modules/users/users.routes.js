@@ -17,7 +17,7 @@ const router = express.Router();
 
 // Teacher management
 router.post('/teachers', authenticate, authorizeRoles('college_admin', 'super_admin'), createTeacher);
-router.get('/teachers', authenticate, authorizeRoles('college_admin', 'super_admin', 'hod', 'teacher'), getTeachers);
+router.get('/teachers', authenticate, authorizeRoles('college_admin', 'super_admin', 'hod', 'teacher', 'student'), getTeachers);
 router.put('/teachers/:id', authenticate, authorizeRoles('college_admin', 'super_admin', 'hod'), updateTeacher);
 router.patch('/teachers/:id/toggle-mentor', authenticate, authorizeRoles('college_admin', 'super_admin', 'hod'), toggleTeacherMentor);
 router.post('/teachers/assign-subject', authenticate, authorizeRoles('college_admin', 'super_admin', 'hod'), assignTeacherSubjects);

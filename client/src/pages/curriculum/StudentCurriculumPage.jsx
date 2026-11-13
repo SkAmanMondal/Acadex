@@ -476,18 +476,28 @@ export default function StudentCurriculumPage() {
                     )}
                   </div>
 
-                  <button
-                    type="button"
-                    onClick={() => setSelectedSubjectId(isSelected ? 'all' : sub._id)}
-                    className={`w-full py-2 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5 cursor-pointer ${
-                      isSelected
-                        ? 'bg-brand-600 text-white shadow-sm'
-                        : 'bg-slate-50 hover:bg-slate-100 text-slate-700 border border-slate-200'
-                    }`}
-                  >
-                    <Calendar size={13} />
-                    <span>{isSelected ? '✓ Filtered on Calendar' : 'View on Calendar'}</span>
-                  </button>
+                  <div className="grid grid-cols-2 gap-2 pt-1">
+                    <button
+                      type="button"
+                      onClick={() => setSelectedSubjectId(isSelected ? 'all' : sub._id)}
+                      className={`py-2 px-2 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5 cursor-pointer ${
+                        isSelected
+                          ? 'bg-brand-600 text-white shadow-sm'
+                          : 'bg-slate-50 hover:bg-slate-100 text-slate-700 border border-slate-200'
+                      }`}
+                    >
+                      <Calendar size={13} />
+                      <span className="truncate">{isSelected ? '✓ Calendar' : 'Calendar'}</span>
+                    </button>
+
+                    <Link
+                      to={`/materials?subject=${sub._id}`}
+                      className="py-2 px-2 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 shadow-2xs"
+                    >
+                      <BookOpen size={13} />
+                      <span className="truncate">Study Notes</span>
+                    </Link>
+                  </div>
                 </div>
               );
             })}

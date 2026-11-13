@@ -33,7 +33,13 @@ app.use(compression({
 }));
 
 // Security and utility middlewares
-app.use(helmet({ crossOriginResourcePolicy: false }));
+app.use(
+  helmet({
+    crossOriginResourcePolicy: false,
+    frameguard: false, // Allow in-browser document previews from frontend
+    contentSecurityPolicy: false, // Allow in-app PDF and resource embedding
+  })
+);
 const allowedOrigins = process.env.CLIENT_URL
   ? process.env.CLIENT_URL.split(',').map((u) => u.trim())
   : ['http://localhost:5173'];

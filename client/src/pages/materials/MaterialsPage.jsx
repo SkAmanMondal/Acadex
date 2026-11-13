@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import api from '../../services/api';
 import { useAuth } from '../../context/AuthContext';
 import {
@@ -37,12 +38,30 @@ import {
 /* ==========================================================================
    Helper Utilities for In-App Previews & File Metadata
    ========================================================================== */
+const getApiBaseUrl = () => {
+  return import.meta.env.VITE_API_URL
+    ? import.meta.env.VITE_API_URL.replace(/\/$/, '')
+    : 'http://localhost:5000/api';
+};
+
+const getMaterialViewUrl = (materialId) => {
+  const token = localStorage.getItem('token') || localStorage.getItem('acadex_token') || '';
+  const apiBase = getApiBaseUrl();
+  return `${apiBase}/materials/${materialId}/view${token ? `?token=${encodeURIComponent(token)}` : ''}`;
+};
+
+const getMaterialDownloadUrl = (materialId) => {
+  const token = localStorage.getItem('token') || localStorage.getItem('acadex_token') || '';
+  const apiBase = getApiBaseUrl();
+  return `${apiBase}/materials/${materialId}/download${token ? `?token=${encodeURIComponent(token)}` : ''}`;
+};
+
 const resolveFileUrl = (url) => {
   if (!url) return '';
   if (url.startsWith('http://') || url.startsWith('https://')) {
     return url;
   }
-  const apiBase = import.meta.env.VITE_API_URL ? import.meta.env.VITE_API_URL.replace(/\/$/, '') : '';
+  const apiBase = getApiBaseUrl();
   return `${apiBase}${url.startsWith('/') ? '' : '/'}${url}`;
 };
 
@@ -124,7 +143,7 @@ const formatFileSize = (bytes) => {
    without downloading, while keeping full download controls accessible.
    ========================================================================== */
 function MaterialViewerModal({ material, onClose, onDownload }) {
-  const [activeEngine, setActiveEngine] = useState('native'); // 'native', 'google', 'office'
+  const [activeEngine, setActiveEngine] = useState('native'); // 'native', 'pdfjs', 'google', 'office'
   const [zoom, setZoom] = useState(100);
   const [rotation, setRotation] = useState(0);
   const [textContent, setTextContent] = useState('');
@@ -133,7 +152,11 @@ function MaterialViewerModal({ material, onClose, onDownload }) {
   const [isFullscreen, setIsFullscreen] = useState(false);
 
   const fileCategory = getFileCategory(material.fileName, material.fileType);
-  const fullUrl = resolveFileUrl(material.fileUrl);
+  const streamViewUrl = getMaterialViewUrl(material._id);
+  const streamDownloadUrl = getMaterialDownloadUrl(material._id);
+  const fullUrl = resolveFileUrl(material.fileUrl) || streamViewUrl;
+  const isMobile = typeof navigator !== 'undefined' && /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+
   const teacherName = material.teacher?.name || material.uploadedBy?.name || 'Faculty Member';
   const teacherRole =
     material.teacher?.role === 'hod'
@@ -149,10 +172,10 @@ function MaterialViewerModal({ material, onClose, onDownload }) {
 
   // If text/code, fetch content to render directly
   useEffect(() => {
-    if (fileCategory === 'text' && fullUrl) {
+    if (fileCategory === 'text' && streamViewUrl) {
       let isMounted = true;
       setLoadingText(true);
-      fetch(fullUrl)
+      fetch(streamViewUrl)
         .then((res) => {
           if (!res.ok) throw new Error('Failed to load text file');
           return res.text();
@@ -173,7 +196,7 @@ function MaterialViewerModal({ material, onClose, onDownload }) {
         isMounted = false;
       };
     }
-  }, [fileCategory, fullUrl]);
+  }, [fileCategory, streamViewUrl]);
 
   const handleCopyText = () => {
     if (!textContent) return;
@@ -183,18 +206,22 @@ function MaterialViewerModal({ material, onClose, onDownload }) {
   };
 
   // Google Docs Viewer (Universal for PDFs, Word, PPT on web)
-  const googleViewerUrl = `https://docs.google.com/viewer?url=${encodeURIComponent(fullUrl)}&embedded=true`;
+  const googleViewerUrl = `https://docs.google.com/viewer?url=${encodeURIComponent(streamViewUrl)}&embedded=true`;
+  // Mozilla PDF.js universal viewer
+  const pdfJsViewerUrl = `https://mozilla.github.io/pdf.js/web/viewer.html?file=${encodeURIComponent(streamViewUrl)}`;
   // Office Online Viewer
-  const officeViewerUrl = `https://view.officeapps.live.com/op/embed.aspx?src=${encodeURIComponent(fullUrl)}`;
+  const officeViewerUrl = `https://view.officeapps.live.com/op/embed.aspx?src=${encodeURIComponent(streamViewUrl)}`;
 
   const getIframeSrc = () => {
     if (fileCategory === 'pdf') {
-      return activeEngine === 'google' ? googleViewerUrl : `${fullUrl}#toolbar=1&navpanes=1`;
+      if (activeEngine === 'google') return googleViewerUrl;
+      if (activeEngine === 'pdfjs') return pdfJsViewerUrl;
+      return `${streamViewUrl}#toolbar=1&navpanes=1`;
     }
     if (fileCategory === 'office') {
       return activeEngine === 'office' ? officeViewerUrl : googleViewerUrl;
     }
-    return fullUrl;
+    return streamViewUrl;
   };
 
   return (
@@ -252,7 +279,7 @@ function MaterialViewerModal({ material, onClose, onDownload }) {
           <div className="flex items-center gap-1.5 shrink-0">
             <button
               type="button"
-              onClick={() => onDownload(material._id, material.fileUrl)}
+              onClick={() => onDownload(material._id, material.fileName)}
               className="px-3.5 py-1.5 rounded-xl bg-brand-600 hover:bg-brand-700 text-white font-bold text-xs flex items-center gap-1.5 shadow-sm transition cursor-pointer"
               title="Download file directly to device"
             >
@@ -260,14 +287,15 @@ function MaterialViewerModal({ material, onClose, onDownload }) {
               <span className="hidden sm:inline">Download</span>
             </button>
 
-            <button
-              type="button"
-              onClick={() => window.open(fullUrl, '_blank')}
-              className="p-2 rounded-xl text-slate-500 hover:text-slate-800 hover:bg-slate-100 transition cursor-pointer"
-              title="Open raw file in new browser tab"
+            <a
+              href={streamViewUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="p-2 rounded-xl text-slate-500 hover:text-slate-800 hover:bg-slate-100 transition cursor-pointer inline-flex items-center justify-center"
+              title="Open full document in new browser tab"
             >
               <ExternalLink size={16} />
-            </button>
+            </a>
 
             <button
               type="button"
@@ -305,8 +333,19 @@ function MaterialViewerModal({ material, onClose, onDownload }) {
                   className={`px-2 py-0.5 rounded-lg font-bold transition cursor-pointer ${
                     activeEngine === 'native' ? 'bg-brand-600 text-white shadow-2xs' : 'text-slate-600 hover:text-slate-900'
                   }`}
+                  title="Direct stream viewer"
                 >
-                  Native Viewer
+                  Direct Stream
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setActiveEngine('pdfjs')}
+                  className={`px-2 py-0.5 rounded-lg font-bold transition cursor-pointer ${
+                    activeEngine === 'pdfjs' ? 'bg-brand-600 text-white shadow-2xs' : 'text-slate-600 hover:text-slate-900'
+                  }`}
+                  title="Mozilla PDF.js viewer"
+                >
+                  PDF.js
                 </button>
                 <button
                   type="button"
@@ -314,8 +353,9 @@ function MaterialViewerModal({ material, onClose, onDownload }) {
                   className={`px-2 py-0.5 rounded-lg font-bold transition cursor-pointer ${
                     activeEngine === 'google' ? 'bg-brand-600 text-white shadow-2xs' : 'text-slate-600 hover:text-slate-900'
                   }`}
+                  title="Cloud viewer"
                 >
-                  Cloud Viewer
+                  Cloud
                 </button>
               </div>
             )}
@@ -386,6 +426,30 @@ function MaterialViewerModal({ material, onClose, onDownload }) {
           </div>
         </div>
 
+        {/* Mobile & Tablet Full Screen Reading Bar */}
+        {fileCategory === 'pdf' && (
+          <div className="bg-gradient-to-r from-blue-700 via-indigo-700 to-brand-700 text-white px-4 py-2 flex flex-wrap items-center justify-between gap-2 text-xs shrink-0 shadow-xs">
+            <div className="flex items-center gap-2">
+              <Sparkles size={14} className="text-amber-300 shrink-0" />
+              <span className="font-semibold">
+                {isMobile ? 'Touch-Optimized Mobile View:' : 'Full-Screen Document Reader:'}
+              </span>
+              <span className="text-blue-100 hidden sm:inline">
+                Open full document in your browser or phone app
+              </span>
+            </div>
+            <a
+              href={streamViewUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="px-3 py-1 bg-white text-brand-700 rounded-lg font-extrabold text-[11px] shadow-xs hover:bg-brand-50 transition shrink-0 flex items-center gap-1.5 cursor-pointer ml-auto"
+            >
+              <ExternalLink size={12} />
+              <span>Open in Full Screen Reader</span>
+            </a>
+          </div>
+        )}
+
         {/* Modal Main Content Viewport */}
         <div className="flex-1 min-h-0 bg-slate-900/5 relative overflow-hidden flex items-center justify-center">
           {fileCategory === 'pdf' ? (
@@ -397,7 +461,7 @@ function MaterialViewerModal({ material, onClose, onDownload }) {
           ) : fileCategory === 'image' ? (
             <div className="w-full h-full overflow-auto flex items-center justify-center p-4 bg-slate-950/90 select-none">
               <img
-                src={fullUrl}
+                src={streamViewUrl || fullUrl}
                 alt={material.title}
                 style={{
                   transform: `scale(${zoom / 100}) rotate(${rotation}deg)`,
@@ -411,7 +475,7 @@ function MaterialViewerModal({ material, onClose, onDownload }) {
               <video
                 controls
                 autoPlay
-                src={fullUrl}
+                src={streamViewUrl || fullUrl}
                 className="max-h-[75vh] max-w-full rounded-2xl shadow-2xl"
               />
             </div>
@@ -424,7 +488,7 @@ function MaterialViewerModal({ material, onClose, onDownload }) {
                 <h4 className="text-sm font-extrabold text-white">{material.title}</h4>
                 <p className="text-xs text-slate-400 mt-1">{material.fileName}</p>
               </div>
-              <audio controls autoPlay src={fullUrl} className="w-full max-w-md pt-2" />
+              <audio controls autoPlay src={streamViewUrl || fullUrl} className="w-full max-w-md pt-2" />
             </div>
           ) : fileCategory === 'office' ? (
             <iframe
@@ -462,7 +526,7 @@ function MaterialViewerModal({ material, onClose, onDownload }) {
               </p>
               <button
                 type="button"
-                onClick={() => onDownload(material._id, material.fileUrl)}
+                onClick={() => onDownload(material._id, material.fileName)}
                 className="w-full py-2.5 rounded-2xl bg-brand-600 hover:bg-brand-700 text-white font-bold text-xs flex items-center justify-center gap-2 shadow-md hover:shadow-lg transition cursor-pointer"
               >
                 <Download size={15} />
@@ -481,6 +545,7 @@ function MaterialViewerModal({ material, onClose, onDownload }) {
    ========================================================================== */
 export default function MaterialsPage() {
   const { user, isTeacher, isHod, isAdmin } = useAuth();
+  const [searchParams] = useSearchParams();
   const [materials, setMaterials] = useState([]);
   const [departments, setDepartments] = useState([]);
   const [subjects, setSubjects] = useState([]);
@@ -496,6 +561,16 @@ export default function MaterialsPage() {
   const [selectedTeacher, setSelectedTeacher] = useState('all');
   const [selectedUnit, setSelectedUnit] = useState('all');
   const [searchQuery, setSearchQuery] = useState('');
+
+  // Sync URL query params into filter state
+  useEffect(() => {
+    const sub = searchParams.get('subject');
+    if (sub) setSelectedSubject(sub);
+    const dept = searchParams.get('department');
+    if (dept) setSelectedDepartment(dept);
+    const unit = searchParams.get('unit');
+    if (unit) setSelectedUnit(unit);
+  }, [searchParams]);
 
   // Upload Modal State
   const [showUploadModal, setShowUploadModal] = useState(false);
@@ -659,22 +734,24 @@ export default function MaterialsPage() {
     }
   };
 
-  const handleDownload = async (id, fileUrl) => {
+  const handleDownload = (id, fileName) => {
     try {
-      await api.patch(`/materials/${id}/download`);
+      api.patch(`/materials/${id}/download`).catch(() => {});
     } catch {
-      // ignore
+      // silent
     }
-    const resolved = resolveFileUrl(fileUrl);
+    const downloadUrl = getMaterialDownloadUrl(id);
     const link = document.createElement('a');
-    link.href = resolved;
-    link.target = '_blank';
-    link.rel = 'noopener noreferrer';
-    link.download = '';
+    link.href = downloadUrl;
+    link.setAttribute('download', fileName || 'study-material.pdf');
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
-    loadData();
+
+    // Optimistically increment download count in local state
+    setMaterials((prev) =>
+      prev.map((m) => (m._id === id ? { ...m, downloadCount: (m.downloadCount || 0) + 1 } : m))
+    );
   };
 
   return (
@@ -958,28 +1035,30 @@ export default function MaterialsPage() {
               </div>
 
               {/* Bottom Actions: Both View Online & Download Buttons */}
-              <div className="mt-4 pt-3 border-t border-slate-100 flex items-center justify-between gap-2">
-                <div className="text-[10px] text-slate-400 flex flex-col">
-                  <span className="font-semibold text-slate-600">{formatFileSize(mat.fileSize)}</span>
+              <div className="mt-4 pt-3 border-t border-slate-100 space-y-2.5">
+                <div className="flex items-center justify-between text-[11px] text-slate-500">
+                  <span className="font-semibold text-slate-700">{formatFileSize(mat.fileSize)}</span>
                   <span>{mat.downloadCount || 0} downloads</span>
                 </div>
 
-                <div className="flex items-center gap-1.5 shrink-0">
+                <div className="grid grid-cols-2 gap-2">
                   <button
+                    type="button"
                     onClick={() => setPreviewMaterial(mat)}
-                    className="px-3 py-1.5 rounded-xl bg-brand-50 hover:bg-brand-100 text-brand-700 border border-brand-200/80 text-xs font-bold flex items-center gap-1.5 transition cursor-pointer shadow-2xs"
-                    title="View directly in website without downloading"
+                    className="w-full py-2.5 px-3 rounded-xl bg-brand-50 hover:bg-brand-100 text-brand-700 border border-brand-200/90 text-xs font-bold flex items-center justify-center gap-1.5 transition cursor-pointer shadow-2xs"
+                    title="View study material directly online"
                   >
-                    <Eye size={13} className="text-brand-600" />
+                    <Eye size={14} className="text-brand-600" />
                     <span>View Online</span>
                   </button>
 
                   <button
-                    onClick={() => handleDownload(mat._id, mat.fileUrl)}
-                    className="px-3 py-1.5 rounded-xl bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold flex items-center gap-1.5 transition cursor-pointer shadow-2xs"
-                    title="Download file to device"
+                    type="button"
+                    onClick={() => handleDownload(mat._id, mat.fileName)}
+                    className="w-full py-2.5 px-3 rounded-xl bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold flex items-center justify-center gap-1.5 transition cursor-pointer shadow-2xs"
+                    title="Download file directly to device"
                   >
-                    <Download size={13} />
+                    <Download size={14} />
                     <span>Download</span>
                   </button>
                 </div>
@@ -990,12 +1069,29 @@ export default function MaterialsPage() {
       </div>
 
       {filteredMaterials.length === 0 && !loading && (
-        <div className="bg-white rounded-3xl border border-slate-200/80 p-12 text-center text-slate-500 space-y-2">
-          <BookOpen size={36} className="mx-auto text-slate-300" />
+        <div className="bg-white rounded-3xl border border-slate-200/80 p-12 text-center text-slate-500 space-y-3">
+          <div className="w-14 h-14 rounded-2xl bg-brand-50 border border-brand-200 text-brand-600 flex items-center justify-center mx-auto shadow-inner">
+            <BookOpen size={28} />
+          </div>
           <p className="text-sm font-bold text-slate-700">No study materials match the selected filters</p>
           <p className="text-xs text-slate-400 max-w-sm mx-auto">
             Try adjusting your Department, Subject, or Faculty Instructor selection.
           </p>
+          {(selectedDepartment !== 'all' || selectedSubject !== 'all' || selectedTeacher !== 'all' || selectedUnit !== 'all' || searchQuery) && (
+            <button
+              type="button"
+              onClick={() => {
+                setSelectedDepartment('all');
+                setSelectedSubject('all');
+                setSelectedTeacher('all');
+                setSelectedUnit('all');
+                setSearchQuery('');
+              }}
+              className="mt-2 px-4 py-2 bg-brand-600 hover:bg-brand-700 text-white rounded-xl text-xs font-bold shadow-sm transition cursor-pointer"
+            >
+              Show All Study Materials
+            </button>
+          )}
         </div>
       )}
 
