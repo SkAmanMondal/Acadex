@@ -166,31 +166,19 @@ export default function MessagesPage() {
         setContacts(sorted);
 
         // Pre-selection priority:
-        // 1. Contact explicitly requested via URL param or navigation state
-        // 2. Pinned contact
-        // 3. If student: Mentor contact
-        // 4. First contact in the list
+        // ONLY pre-select if contact was explicitly requested via URL param or navigation state (e.g. clicking "Message Mentor")
         let initialContact = null;
         if (targetContactId) {
           initialContact = sorted.find((c) => String(c._id) === String(targetContactId));
         }
-        if (!initialContact && user?.role === 'student') {
-          initialContact = sorted.find(
-            (c) => c.isMentor || c.role === 'mentor' || c.relationship?.includes('Mentor')
-          );
-        }
-        if (!initialContact && sorted.length > 0) {
-          initialContact = sorted[0];
-        }
 
         if (initialContact) {
           setSelectedContact(initialContact);
-          // Auto-open chat pane on desktop, but keep contacts visible on mobile unless a specific contact was explicitly targeted
-          if (targetContactId || window.innerWidth >= 640) {
-            setMobileChatOpen(true);
-          } else {
-            setMobileChatOpen(false);
-          }
+          setMobileChatOpen(true);
+        } else {
+          // Do NOT automatically open any chat on initial page load
+          setSelectedContact(null);
+          setMobileChatOpen(false);
         }
       }
     } catch (err) {
@@ -1238,12 +1226,20 @@ export default function MessagesPage() {
               </form>
             </>
           ) : (
-            <div className="h-full flex flex-col items-center justify-center text-slate-400 text-xs p-8 text-center space-y-2">
-              <MessageSquare size={36} className="text-slate-300" />
-              <p className="font-semibold text-slate-600">Select a Contact</p>
-              <p className="text-[11px] text-slate-400 max-w-xs">
-                Choose an authorized mentor, faculty member, or student from the left panel to begin.
-              </p>
+            <div className="h-full flex flex-col items-center justify-center text-slate-400 p-8 text-center space-y-3 select-none">
+              <div className="w-16 h-16 rounded-3xl bg-brand-50 border border-brand-100 text-brand-600 flex items-center justify-center shadow-xs">
+                <MessageSquare size={32} strokeWidth={2.2} />
+              </div>
+              <div className="max-w-xs space-y-1">
+                <h3 className="text-sm font-extrabold text-slate-800">Select a Conversation</h3>
+                <p className="text-xs text-slate-400 leading-relaxed">
+                  Choose a faculty member, mentor, or student from the left list to begin messaging.
+                </p>
+              </div>
+              <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-slate-100 text-slate-600 text-[11px] font-semibold">
+                <Users size={13} />
+                <span>{contacts.length} Academic Contacts Available</span>
+              </div>
             </div>
           )}
         </div>

@@ -1,6 +1,6 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
-import { MessageSquare, Sparkles, X, ChevronRight, Users, ArrowUpRight } from 'lucide-react';
+import { MessageSquare, X, ChevronRight } from 'lucide-react';
 import { useSocket } from '../../context/SocketContext';
 import { useAuth } from '../../context/AuthContext';
 
@@ -11,8 +11,51 @@ export default function FloatingChatButton() {
   const { onlineCount, unreadChatCount, lastIncomingMessage, setUnreadChatCount } = useSocket();
   const [showPopup, setShowPopup] = useState(false);
 
-  // If user is not logged in or is currently already on the messages page, hide the floating button
-  if (!user || location.pathname === '/messages' || location.pathname === '/login' || location.pathname === '/kiosk') {
+  // Position state for desktop dragging
+  const [position, setPosition] = useState(() => {
+    try {
+      const saved = JSON.parse(localStorage.getItem('acadex_chat_btn_pos'));
+      if (saved && typeof saved.x === 'number' && typeof saved.y === 'number') {
+        return saved;
+      }
+    } catch {
+      // ignore
+    }
+    return null;
+  });
+
+  const [isDragging, setIsDragging] = useState(false);
+  const isDraggingRef = useRef(false);
+  const dragStartRef = useRef({ mouseX: 0, mouseY: 0, posX: 0, posY: 0, moved: false });
+
+  // Initialize position and clamp on window resize
+  useEffect(() => {
+    const updatePosition = () => {
+      setPosition((prev) => {
+        const maxX = Math.max(16, window.innerWidth - 76);
+        const maxY = Math.max(16, window.innerHeight - 76);
+        if (!prev) {
+          return { x: maxX - 16, y: maxY - 16 };
+        }
+        return {
+          x: Math.max(16, Math.min(maxX, prev.x)),
+          y: Math.max(16, Math.min(maxY, prev.y)),
+        };
+      });
+    };
+
+    updatePosition();
+    window.addEventListener('resize', updatePosition);
+    return () => window.removeEventListener('resize', updatePosition);
+  }, []);
+
+  // Hide on phones, login page, kiosk, and messages page
+  if (
+    !user ||
+    location.pathname === '/messages' ||
+    location.pathname === '/login' ||
+    location.pathname === '/kiosk'
+  ) {
     return null;
   }
 
@@ -22,11 +65,104 @@ export default function FloatingChatButton() {
     navigate('/messages');
   };
 
+  const handleMouseDown = (e) => {
+    // Only primary button
+    if (e.button !== 0) return;
+    e.preventDefault();
+
+    isDraggingRef.current = true;
+    dragStartRef.current = {
+      mouseX: e.clientX,
+      mouseY: e.clientY,
+      posX: position?.x ?? (window.innerWidth - 80),
+      posY: position?.y ?? (window.innerHeight - 90),
+      moved: false,
+    };
+
+    const handleMouseMove = (moveEvent) => {
+      if (!isDraggingRef.current) return;
+      const deltaX = moveEvent.clientX - dragStartRef.current.mouseX;
+      const deltaY = moveEvent.clientY - dragStartRef.current.mouseY;
+
+      if (Math.abs(deltaX) > 4 || Math.abs(deltaY) > 4) {
+        dragStartRef.current.moved = true;
+        setIsDragging(true);
+      }
+
+      const maxX = Math.max(16, window.innerWidth - 76);
+      const maxY = Math.max(16, window.innerHeight - 76);
+      const nextX = Math.max(16, Math.min(maxX, dragStartRef.current.posX + deltaX));
+      const nextY = Math.max(16, Math.min(maxY, dragStartRef.current.posY + deltaY));
+
+      setPosition({ x: nextX, y: nextY });
+    };
+
+    const handleMouseUp = () => {
+      isDraggingRef.current = false;
+      window.removeEventListener('mousemove', handleMouseMove);
+      window.removeEventListener('mouseup', handleMouseUp);
+
+      setTimeout(() => {
+        setIsDragging(false);
+      }, 50);
+
+      setPosition((cur) => {
+        if (cur) {
+          try {
+            localStorage.setItem('acadex_chat_btn_pos', JSON.stringify(cur));
+          } catch {
+            // ignore
+          }
+        }
+        return cur;
+      });
+    };
+
+    window.addEventListener('mousemove', handleMouseMove);
+    window.addEventListener('mouseup', handleMouseUp);
+  };
+
+  const handleClick = (e) => {
+    if (dragStartRef.current.moved) {
+      e.preventDefault();
+      e.stopPropagation();
+      return;
+    }
+    handleOpenMessenger();
+  };
+
+  // Determine popup placement relative to button position
+  const isTopHalf = position ? position.y < window.innerHeight / 2 : false;
+  const isLeftHalf = position ? position.x < window.innerWidth / 2 : false;
+
   return (
-    <div className="fixed bottom-20 sm:bottom-[calc(1.5rem+env(safe-area-inset-bottom,0px))] right-4 sm:right-[calc(1.5rem+env(safe-area-inset-right,0px))] z-40 flex flex-col items-end">
+    // Hidden on phone (< sm), visible only on desktop / tablet
+    <div
+      style={
+        position
+          ? {
+              left: `${position.x}px`,
+              top: `${position.y}px`,
+              position: 'fixed',
+            }
+          : {
+              right: '1.5rem',
+              bottom: '1.5rem',
+              position: 'fixed',
+            }
+      }
+      className="hidden sm:flex z-40 select-none flex-col items-end"
+    >
       {/* Mini Quick Preview Toast / Popover */}
       {showPopup && (
-        <div className="mb-3 w-80 bg-white rounded-3xl shadow-2xl border border-slate-200/90 p-4 animate-in fade-in slide-in-from-bottom-3 duration-200">
+        <div
+          style={{
+            position: 'absolute',
+            [isTopHalf ? 'top' : 'bottom']: '4rem',
+            [isLeftHalf ? 'left' : 'right']: 0,
+          }}
+          className="w-80 bg-white rounded-3xl shadow-2xl border border-slate-200 p-4 animate-in fade-in zoom-in-95 duration-150 z-50"
+        >
           <div className="flex items-center justify-between pb-3 border-b border-slate-100">
             <div className="flex items-center gap-2">
               <div className="w-8 h-8 rounded-xl bg-brand-50 border border-brand-200 text-brand-700 flex items-center justify-center font-bold text-xs shrink-0">
@@ -78,25 +214,37 @@ export default function FloatingChatButton() {
         </div>
       )}
 
-      {/* Main Floating Trigger Button */}
+      {/* Main Floating Draggable Trigger Button */}
       <div className="relative group">
         {/* Tooltip on hover */}
-        <div className="absolute right-full mr-3 top-1/2 -translate-y-1/2 hidden md:group-hover:flex items-center gap-2 bg-slate-900/90 backdrop-blur-md text-white text-xs font-bold px-3 py-1.5 rounded-xl shadow-xl pointer-events-none whitespace-nowrap transition">
-          <span>Campus Messenger</span>
-          <span className="text-[10px] text-emerald-400 font-extrabold flex items-center gap-1">
-            <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-            {onlineCount} Online
-          </span>
-        </div>
+        {!isDragging && (
+          <div
+            className={`absolute ${
+              isLeftHalf ? 'left-full ml-3' : 'right-full mr-3'
+            } top-1/2 -translate-y-1/2 hidden md:group-hover:flex items-center gap-2 bg-slate-900 text-white text-xs font-bold px-3 py-1.5 rounded-xl shadow-xl pointer-events-none whitespace-nowrap transition`}
+          >
+            <span>Campus Messenger</span>
+            <span className="text-[10px] text-slate-400 font-normal">
+              (Drag to move)
+            </span>
+            <span className="text-[10px] text-emerald-400 font-extrabold flex items-center gap-1">
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+              {onlineCount} Online
+            </span>
+          </div>
+        )}
 
         <button
-          onClick={handleOpenMessenger}
+          onMouseDown={handleMouseDown}
+          onClick={handleClick}
           onContextMenu={(e) => {
             e.preventDefault();
             setShowPopup((prev) => !prev);
           }}
-          title="Open Campus Direct Messages"
-          className="w-14 h-14 rounded-full bg-gradient-to-r from-brand-600 via-indigo-600 to-purple-600 hover:from-brand-500 hover:to-purple-500 text-white shadow-xl shadow-brand-500/35 hover:shadow-2xl hover:shadow-brand-500/50 hover:scale-105 active:scale-95 transition-all flex items-center justify-center cursor-pointer ring-4 ring-white"
+          title="Drag to move • Click to open Messenger"
+          className={`w-14 h-14 rounded-full bg-gradient-to-r from-brand-600 via-indigo-600 to-purple-600 hover:from-brand-500 hover:to-purple-500 text-white shadow-xl shadow-brand-500/35 hover:shadow-2xl hover:shadow-brand-500/50 hover:scale-105 active:scale-95 transition-transform flex items-center justify-center ring-4 ring-white ${
+            isDragging ? 'cursor-grabbing scale-105 ring-brand-400' : 'cursor-grab'
+          }`}
         >
           <div className="nav-icon-badge">
             <MessageSquare size={22} className="shrink-0 strokeWidth={2.2}" />

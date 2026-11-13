@@ -247,7 +247,7 @@ export default function NotificationCenter({ align = 'right', buttonClassName = 
         className={`relative p-2.5 rounded-2xl border transition-all duration-200 cursor-pointer flex items-center justify-center ${
           isOpen
             ? 'bg-brand-50 border-brand-300 text-brand-700 shadow-sm ring-2 ring-brand-500/20'
-            : 'bg-white/80 hover:bg-slate-100 border-slate-200 text-slate-600 hover:text-slate-900 shadow-sm'
+            : 'bg-white hover:bg-slate-100 border-slate-200 text-slate-600 hover:text-slate-900 shadow-sm'
         } ${buttonClassName}`}
         aria-label="Notification Center"
         aria-expanded={isOpen}
@@ -274,14 +274,14 @@ export default function NotificationCenter({ align = 'right', buttonClassName = 
               aria-hidden="true"
             />
 
-            {/* Notification Popover Box with top-tier z-index */}
+            {/* Notification Popover Box with solid non-transparent background */}
             <div
               ref={popoverRef}
               style={getPopoverStyle()}
-              className="fixed z-[9999] bg-white/98 backdrop-blur-2xl border border-slate-200/90 shadow-2xl rounded-3xl overflow-hidden ring-1 ring-slate-900/10 flex flex-col animate-in fade-in zoom-in-95 duration-150 select-text"
+              className="fixed z-[9999] bg-white border border-slate-200 shadow-2xl rounded-3xl overflow-hidden ring-1 ring-slate-900/10 flex flex-col animate-in fade-in zoom-in-95 duration-150 select-text"
             >
               {/* Header */}
-              <div className="p-4 border-b border-slate-100 flex items-center justify-between bg-gradient-to-r from-slate-50 to-white shrink-0">
+              <div className="p-4 border-b border-slate-100 flex items-center justify-between bg-white shrink-0">
                 <div className="flex items-center gap-2.5">
                   <div className="p-2 rounded-xl bg-brand-50 text-brand-600 border border-brand-100">
                     <Bell size={16} />
@@ -321,7 +321,7 @@ export default function NotificationCenter({ align = 'right', buttonClassName = 
               </div>
 
               {/* Filter Tabs */}
-              <div className="px-4 py-2 border-b border-slate-100 bg-slate-50/60 flex items-center justify-between text-xs shrink-0">
+              <div className="px-4 py-2 border-b border-slate-100 bg-slate-50 flex items-center justify-between text-xs shrink-0">
                 <div className="flex items-center gap-1.5">
                   <button
                     onClick={() => setActiveFilter('all')}
@@ -374,8 +374,8 @@ export default function NotificationCenter({ align = 'right', buttonClassName = 
                       <div
                         key={item._id}
                         onClick={() => handleItemClick(item)}
-                        className={`p-3.5 transition group cursor-pointer relative flex gap-3 hover:bg-slate-50/90 ${
-                          !item.isRead ? 'bg-brand-50/25' : 'bg-white'
+                        className={`p-3.5 transition group cursor-pointer relative flex gap-3 hover:bg-slate-50 ${
+                          !item.isRead ? 'bg-blue-50/70' : 'bg-white'
                         }`}
                       >
                         {/* Priority Accent Indicator */}
@@ -472,7 +472,7 @@ export default function NotificationCenter({ align = 'right', buttonClassName = 
               </div>
 
               {/* Footer */}
-              <div className="p-2.5 bg-slate-50/90 border-t border-slate-100 flex items-center justify-between text-[11px] shrink-0">
+              <div className="p-2.5 bg-slate-50 border-t border-slate-100 flex items-center justify-between text-[11px] shrink-0">
                 <button
                   type="button"
                   onClick={() => {
@@ -503,7 +503,7 @@ export default function NotificationCenter({ align = 'right', buttonClassName = 
       {/* Full Notification Details Modal (rendered with highest priority z-[10000]) */}
       {selectedNotification &&
         createPortal(
-          <div className="fixed inset-0 z-[10000] bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in duration-150">
+          <div className="fixed inset-0 z-[10000] bg-slate-950/75 flex items-center justify-center p-4 animate-in fade-in duration-150">
             <div className="bg-white rounded-3xl shadow-2xl max-w-md w-full border border-slate-200 p-6 space-y-4 animate-in zoom-in-95 duration-150">
               <div className="flex items-center justify-between pb-3 border-b border-slate-100">
                 <div className="flex items-center gap-2.5">

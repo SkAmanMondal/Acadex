@@ -488,30 +488,6 @@ export default function DashboardLayout() {
 
             {/* Mobile Drawer Scrollable Body */}
             <div className="flex-1 overflow-y-auto p-4 space-y-4">
-              {/* Mobile Quick Shortcuts */}
-              <div className="bg-brand-50/60 border border-brand-100 p-3 rounded-2xl">
-                <div className="text-[10px] font-bold uppercase tracking-wider text-brand-700 mb-2 flex items-center gap-1">
-                  <Sparkles size={11} className="w-3 h-3 shrink-0" strokeWidth={2.2} />
-                  <span>Quick Actions</span>
-                </div>
-                <div className="grid grid-cols-2 gap-1.5">
-                  {quickShortcuts.map((sc) => {
-                    const Icon = sc.icon;
-                    return (
-                      <Link
-                        key={sc.path}
-                        to={sc.path}
-                        onClick={() => setMobileMenuOpen(false)}
-                        className="flex flex-col gap-1 p-2 bg-white rounded-xl border border-slate-200 text-left text-xs font-semibold text-slate-700 hover:border-brand-300"
-                      >
-                        <Icon size={16} strokeWidth={2.2} className="shrink-0 text-brand-600" />
-                        <span className="text-[11px] truncate">{sc.name}</span>
-                      </Link>
-                    );
-                  })}
-                </div>
-              </div>
-
               {/* Mobile Navigation Links */}
               <div className="space-y-1">
                 <div className="px-3 py-1 text-[10px] font-bold uppercase tracking-wider text-slate-400">
