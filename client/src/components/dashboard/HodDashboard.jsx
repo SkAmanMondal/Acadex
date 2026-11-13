@@ -24,26 +24,35 @@ import {
 
 export default function HodDashboard({ user }) {
   const { socket } = useSocket();
-  const [metrics, setMetrics] = useState(null);
+  const [metrics, setMetrics] = useState(() => {
+    try {
+      const cached = sessionStorage.getItem(`acadex_hod_metrics_${user?._id}`);
+      return cached ? JSON.parse(cached) : null;
+    } catch {
+      return null;
+    }
+  });
   const [riskStudents, setRiskStudents] = useState([]);
   const [deptClasses, setDeptClasses] = useState([]);
   const [todaySlots, setTodaySlots] = useState([]);
   const [activeSession, setActiveSession] = useState(null);
   const [showSessionModal, setShowSessionModal] = useState(false);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(!metrics);
 
-  const loadHodData = async () => {
+  const loadHodData = async (isSilent = false) => {
     try {
-      setLoading(true);
-      const [metRes, riskRes, timeRes] = await Promise.allSettled([
+      if (!isSilent && !metrics) setLoading(true);
+      const [metRes, timeRes] = await Promise.allSettled([
         api.get('/analytics/dashboard-metrics'),
-        api.get('/analytics/risk-indicators'),
         api.get('/timetable'),
       ]);
 
       if (metRes.status === 'fulfilled' && metRes.value.data?.success) {
         const data = metRes.value.data.data;
         setMetrics(data);
+        try {
+          sessionStorage.setItem(`acadex_hod_metrics_${user?._id}`, JSON.stringify(data));
+        } catch {}
         if (data.activeSession) {
           setActiveSession(data.activeSession);
         }
@@ -54,9 +63,7 @@ export default function HodDashboard({ user }) {
           setTodaySlots(data.todaySlots);
         }
       }
-      if (riskRes.status === 'fulfilled' && riskRes.value.data?.success) {
-        setRiskStudents(riskRes.value.data.data.slice(0, 4));
-      }
+
       if (timeRes.status === 'fulfilled' && timeRes.value.data?.success) {
         // Fallback filter if todaySlots not provided
         const scheduleList = Array.isArray(timeRes.value.data.data) ? timeRes.value.data.data : [];
@@ -65,6 +72,15 @@ export default function HodDashboard({ user }) {
         );
         setTodaySlots((prev) => (prev && prev.length > 0 ? prev : mySlots));
       }
+
+      // Progressive background fetch for risk indicators (does not block initial dashboard render)
+      api.get('/analytics/risk-indicators')
+        .then((riskRes) => {
+          if (riskRes.data?.success) {
+            setRiskStudents(riskRes.data.data.slice(0, 4));
+          }
+        })
+        .catch(() => {});
     } catch (err) {
       console.error(err);
     } finally {
@@ -73,11 +89,11 @@ export default function HodDashboard({ user }) {
   };
 
   useEffect(() => {
-    loadHodData();
+    loadHodData(Boolean(metrics));
   }, [user]);
 
   // Zero-refresh automatic live synchronization on department analytics/students/attendance updates
-  useRealtimeSync(['students_updated', 'attendance_updated', 'timetable_updated', 'dashboard_refresh'], loadHodData);
+  useRealtimeSync(['students_updated', 'attendance_updated', 'timetable_updated', 'dashboard_refresh'], () => loadHodData(true));
 
   // Real-time socket event listeners
   useEffect(() => {
@@ -245,38 +261,58 @@ export default function HodDashboard({ user }) {
 
       {/* 2. Departmental Macro KPI Cards */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-        <div className="bg-white p-5 rounded-2xl border border-slate-200/80 shadow-sm">
-          <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
-            Enrolled Dept Students
+        <div className="bg-gradient-to-br from-white to-indigo-50/50 p-4 sm:p-5 rounded-2xl border-2 border-indigo-200/90 border-t-4 border-t-indigo-500 shadow-xs flex items-center justify-between">
+          <div>
+            <span className="text-[10px] font-bold uppercase tracking-wider text-indigo-800">
+              Enrolled Dept Students
+            </span>
+            <p className="text-2xl font-black text-slate-900 mt-1 tabular-nums">{metrics?.deptStudents || 0}</p>
+            <Link to="/hod/students" className="text-[11px] text-brand-600 font-bold hover:underline mt-0.5 block">
+              Student Registry →
+            </Link>
+          </div>
+          <span className="w-10 h-10 rounded-2xl bg-indigo-100 text-indigo-700 flex items-center justify-center shrink-0 shadow-2xs">
+            <GraduationCap size={18} />
           </span>
-          <p className="text-2xl font-extrabold text-slate-900 mt-1">{metrics?.deptStudents || 0}</p>
-          <Link to="/hod/students" className="text-[11px] text-brand-600 font-bold hover:underline mt-0.5 block">
-            Student Registry →
-          </Link>
         </div>
 
-        <div className="bg-white p-5 rounded-2xl border border-slate-200/80 shadow-sm">
-          <span className="text-[10px] font-bold uppercase tracking-wider text-indigo-500">
-            Department Faculty
+        <div className="bg-gradient-to-br from-white to-blue-50/50 p-4 sm:p-5 rounded-2xl border-2 border-blue-200/90 border-t-4 border-t-blue-500 shadow-xs flex items-center justify-between">
+          <div>
+            <span className="text-[10px] font-bold uppercase tracking-wider text-blue-800">
+              Department Faculty
+            </span>
+            <p className="text-2xl font-black text-blue-900 mt-1 tabular-nums">{metrics?.deptFaculty || 0}</p>
+            <p className="text-[11px] text-slate-500 mt-0.5">Professors & Instructors</p>
+          </div>
+          <span className="w-10 h-10 rounded-2xl bg-blue-100 text-blue-700 flex items-center justify-center shrink-0 shadow-2xs">
+            <Users size={18} />
           </span>
-          <p className="text-2xl font-extrabold text-indigo-900 mt-1">{metrics?.deptFaculty || 0}</p>
-          <p className="text-[11px] text-slate-500 mt-0.5">Professors & Instructors</p>
         </div>
 
-        <div className="bg-white p-5 rounded-2xl border border-slate-200/80 shadow-sm">
-          <span className="text-[10px] font-bold uppercase tracking-wider text-emerald-500">
-            Active Degree Batches
+        <div className="bg-gradient-to-br from-white to-emerald-50/50 p-4 sm:p-5 rounded-2xl border-2 border-emerald-200/90 border-t-4 border-t-emerald-500 shadow-xs flex items-center justify-between">
+          <div>
+            <span className="text-[10px] font-bold uppercase tracking-wider text-emerald-800">
+              Active Degree Batches
+            </span>
+            <p className="text-2xl font-black text-emerald-800 mt-1 tabular-nums">{metrics?.deptBatches || 0}</p>
+            <p className="text-[11px] text-slate-500 mt-0.5">MCA & CSE Cohorts</p>
+          </div>
+          <span className="w-10 h-10 rounded-2xl bg-emerald-100 text-emerald-700 flex items-center justify-center shrink-0 shadow-2xs">
+            <Calendar size={18} />
           </span>
-          <p className="text-2xl font-extrabold text-emerald-700 mt-1">{metrics?.deptBatches || 0}</p>
-          <p className="text-[11px] text-slate-500 mt-0.5">MCA & CSE Cohorts</p>
         </div>
 
-        <div className="bg-white p-5 rounded-2xl border border-slate-200/80 shadow-sm">
-          <span className="text-[10px] font-bold uppercase tracking-wider text-purple-500">
-            Timetable Lecture Slots
+        <div className="bg-gradient-to-br from-white to-purple-50/50 p-4 sm:p-5 rounded-2xl border-2 border-purple-200/90 border-t-4 border-t-purple-500 shadow-xs flex items-center justify-between">
+          <div>
+            <span className="text-[10px] font-bold uppercase tracking-wider text-purple-800">
+              Timetable Lecture Slots
+            </span>
+            <p className="text-2xl font-black text-purple-900 mt-1 tabular-nums">{metrics?.deptTimetableSlots || 0}</p>
+            <p className="text-[11px] text-slate-500 mt-0.5">Weekly collision-free classes</p>
+          </div>
+          <span className="w-10 h-10 rounded-2xl bg-purple-100 text-purple-700 flex items-center justify-center shrink-0 shadow-2xs">
+            <Clock size={18} />
           </span>
-          <p className="text-2xl font-extrabold text-purple-900 mt-1">{metrics?.deptTimetableSlots || 0}</p>
-          <p className="text-[11px] text-slate-500 mt-0.5">Weekly collision-free classes</p>
         </div>
       </div>
 

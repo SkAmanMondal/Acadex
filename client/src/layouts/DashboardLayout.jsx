@@ -168,6 +168,24 @@ export default function DashboardLayout() {
   const navItems = getNavItems();
   const quickShortcuts = getQuickShortcuts();
 
+  // Helper for vibrant, categorized icon containers
+  const getNavColor = (path) => {
+    if (path === '/') return { bg: 'bg-indigo-50 text-indigo-600 group-hover:bg-indigo-100 group-hover:text-indigo-700', activeBg: 'from-brand-600 to-indigo-600' };
+    if (path.includes('academic') || path.includes('curriculum')) return { bg: 'bg-violet-50 text-violet-600 group-hover:bg-violet-100 group-hover:text-violet-700', activeBg: 'from-violet-600 to-indigo-600' };
+    if (path.includes('teacher') || path.includes('student')) return { bg: 'bg-blue-50 text-blue-600 group-hover:bg-blue-100 group-hover:text-blue-700', activeBg: 'from-blue-600 to-indigo-600' };
+    if (path.includes('timetable')) return { bg: 'bg-amber-50 text-amber-600 group-hover:bg-amber-100 group-hover:text-amber-700', activeBg: 'from-amber-600 to-orange-600' };
+    if (path.includes('attendance') || path.includes('qr') || path.includes('scanner')) return { bg: 'bg-emerald-50 text-emerald-600 group-hover:bg-emerald-100 group-hover:text-emerald-700', activeBg: 'from-emerald-600 to-teal-600' };
+    if (path.includes('material')) return { bg: 'bg-rose-50 text-rose-600 group-hover:bg-rose-100 group-hover:text-rose-700', activeBg: 'from-rose-600 to-pink-600' };
+    if (path.includes('assignment')) return { bg: 'bg-cyan-50 text-cyan-600 group-hover:bg-cyan-100 group-hover:text-cyan-700', activeBg: 'from-cyan-600 to-blue-600' };
+    if (path.includes('quiz')) return { bg: 'bg-purple-50 text-purple-600 group-hover:bg-purple-100 group-hover:text-purple-700', activeBg: 'from-purple-600 to-indigo-600' };
+    if (path.includes('result') || path.includes('internal')) return { bg: 'bg-amber-50 text-amber-600 group-hover:bg-amber-100 group-hover:text-amber-700', activeBg: 'from-amber-600 to-yellow-600' };
+    if (path.includes('message')) return { bg: 'bg-indigo-50 text-indigo-600 group-hover:bg-indigo-100 group-hover:text-indigo-700', activeBg: 'from-indigo-600 to-brand-600' };
+    if (path.includes('mentorship')) return { bg: 'bg-teal-50 text-teal-600 group-hover:bg-teal-100 group-hover:text-teal-700', activeBg: 'from-teal-600 to-emerald-600' };
+    if (path.includes('analytics')) return { bg: 'bg-rose-50 text-rose-600 group-hover:bg-rose-100 group-hover:text-rose-700', activeBg: 'from-rose-600 to-red-600' };
+    if (path.includes('announcement')) return { bg: 'bg-orange-50 text-orange-600 group-hover:bg-orange-100 group-hover:text-orange-700', activeBg: 'from-orange-600 to-amber-600' };
+    return { bg: 'bg-brand-50 text-brand-600 group-hover:bg-brand-100 group-hover:text-brand-700', activeBg: 'from-brand-600 to-indigo-600' };
+  };
+
   return (
     <div className="fixed inset-0 w-full h-full max-h-[100dvh] bg-slate-50/70 flex flex-col font-sans overflow-hidden">
       {/* ====================================================================== */}
@@ -320,14 +338,15 @@ export default function DashboardLayout() {
               {navItems.map((item) => {
                 const Icon = item.icon;
                 const isActive = location.pathname === item.path;
+                const colorInfo = getNavColor(item.path);
                 return (
                   <Link
                     key={item.path}
                     to={item.path}
                     className={`flex items-center justify-between px-3 py-2 rounded-xl text-xs font-semibold transition-all duration-150 cursor-pointer group ${
                       isActive
-                        ? 'bg-gradient-to-r from-brand-600 to-indigo-600 text-white shadow-md shadow-brand-500/20'
-                        : 'text-slate-600 hover:bg-slate-100/80 hover:text-slate-900'
+                        ? `bg-gradient-to-r ${colorInfo.activeBg} text-white shadow-md shadow-brand-500/20`
+                        : 'text-slate-700 hover:bg-slate-100/80 hover:text-slate-900'
                     }`}
                   >
                     <div className="flex items-center gap-2.5 min-w-0">
@@ -336,7 +355,7 @@ export default function DashboardLayout() {
                         className={`w-7 h-7 rounded-lg flex items-center justify-center shrink-0 min-w-[28px] min-h-[28px] transition-all ${
                           isActive
                             ? 'bg-white/20 text-white shadow-xs'
-                            : 'bg-slate-100 text-slate-600 group-hover:bg-brand-50 group-hover:text-brand-600'
+                            : `${colorInfo.bg}`
                         }`}
                       >
                         <Icon size={16} strokeWidth={2.2} className="shrink-0 text-current" />
@@ -423,6 +442,7 @@ export default function DashboardLayout() {
             {navItems.map((item) => {
               const Icon = item.icon;
               const isActive = location.pathname === item.path;
+              const colorInfo = getNavColor(item.path);
               return (
                 <Link
                   key={item.path}
@@ -430,8 +450,8 @@ export default function DashboardLayout() {
                   title={item.name}
                   className={`flex items-center justify-center w-10 h-10 mx-auto rounded-xl transition cursor-pointer group ${
                     isActive
-                      ? 'bg-gradient-to-r from-brand-600 to-indigo-600 text-white shadow-md shadow-brand-500/20'
-                      : 'text-slate-500 hover:text-slate-900 hover:bg-slate-100'
+                      ? `bg-gradient-to-r ${colorInfo.activeBg} text-white shadow-md shadow-brand-500/20`
+                      : `${colorInfo.bg}`
                   }`}
                 >
                   <Icon size={18} strokeWidth={2.2} className="shrink-0 text-current" />
@@ -496,6 +516,7 @@ export default function DashboardLayout() {
                 {navItems.map((item) => {
                   const Icon = item.icon;
                   const isActive = location.pathname === item.path;
+                  const colorInfo = getNavColor(item.path);
                   return (
                     <Link
                       key={item.path}
@@ -510,7 +531,7 @@ export default function DashboardLayout() {
                       <span
                         data-nav-icon="true"
                         className={`w-7 h-7 rounded-lg flex items-center justify-center shrink-0 min-w-[28px] min-h-[28px] ${
-                          isActive ? 'bg-white/20 text-white' : 'bg-slate-100 text-slate-600'
+                          isActive ? 'bg-white/20 text-white' : colorInfo.bg
                         }`}
                       >
                         <Icon size={16} strokeWidth={2.2} className="shrink-0 text-current" />
@@ -562,7 +583,7 @@ export default function DashboardLayout() {
         className={`flex-1 pl-0 ${
           desktopSidebarOpen ? 'sm:pl-64 lg:pl-72' : 'sm:pl-16'
         } min-h-0 ${
-          location.pathname === '/messages' ? 'overflow-hidden flex flex-col pb-0' : 'overflow-y-auto pb-20 sm:pb-0'
+          location.pathname === '/messages' ? 'overflow-hidden flex flex-col pb-14 sm:pb-0' : 'overflow-y-auto pb-20 sm:pb-0'
         } flex flex-col min-w-0 transition-all duration-200`}
       >
         <main
@@ -580,82 +601,80 @@ export default function DashboardLayout() {
       {/* 5. NATIVE MOBILE BOTTOM NAVIGATION BAR (< sm)                         */}
       {/* Fast, thumb-friendly access to core workflows with active state badges */}
       {/* ====================================================================== */}
-      {location.pathname !== '/messages' && (
-        <nav className="flex sm:hidden fixed bottom-0 inset-x-0 z-30 bg-white/95 backdrop-blur-lg border-t border-slate-200/90 px-2 py-1 items-center justify-around shadow-lg shadow-slate-900/10 select-none">
-          <Link
-            to="/"
-            className={`flex flex-col items-center justify-center py-1 px-2.5 rounded-xl transition ${
-              location.pathname === '/'
-                ? 'text-brand-600 font-bold'
-                : 'text-slate-500 hover:text-slate-800'
-            }`}
-          >
-            <Compass size={20} strokeWidth={location.pathname === '/' ? 2.5 : 2} className="shrink-0" />
-            <span className="text-[10px] mt-0.5 tracking-tight">Home</span>
-          </Link>
+      <nav className="flex sm:hidden fixed bottom-0 inset-x-0 z-30 bg-white/95 backdrop-blur-lg border-t border-slate-200/90 px-2 py-1 items-center justify-around shadow-lg shadow-slate-900/10 select-none">
+        <Link
+          to="/"
+          className={`flex flex-col items-center justify-center py-1 px-3 rounded-xl transition ${
+            location.pathname === '/'
+              ? 'text-brand-700 font-bold bg-brand-50/90 shadow-2xs'
+              : 'text-slate-500 hover:text-slate-800'
+          }`}
+        >
+          <Compass size={20} strokeWidth={location.pathname === '/' ? 2.5 : 2} className="shrink-0" />
+          <span className="text-[10px] mt-0.5 tracking-tight font-semibold">Home</span>
+        </Link>
 
-          <Link
-            to="/timetables"
-            className={`flex flex-col items-center justify-center py-1 px-2.5 rounded-xl transition ${
-              location.pathname.startsWith('/timetable')
-                ? 'text-brand-600 font-bold'
-                : 'text-slate-500 hover:text-slate-800'
-            }`}
-          >
-            <Calendar size={20} strokeWidth={location.pathname.startsWith('/timetable') ? 2.5 : 2} className="shrink-0" />
-            <span className="text-[10px] mt-0.5 tracking-tight">Schedule</span>
-          </Link>
+        <Link
+          to="/timetables"
+          className={`flex flex-col items-center justify-center py-1 px-3 rounded-xl transition ${
+            location.pathname.startsWith('/timetable')
+              ? 'text-amber-700 font-bold bg-amber-50/90 shadow-2xs'
+              : 'text-slate-500 hover:text-slate-800'
+          }`}
+        >
+          <Calendar size={20} strokeWidth={location.pathname.startsWith('/timetable') ? 2.5 : 2} className="shrink-0" />
+          <span className="text-[10px] mt-0.5 tracking-tight font-semibold">Schedule</span>
+        </Link>
 
-          <Link
-            to="/messages"
-            className={`flex flex-col items-center justify-center py-1 px-2.5 rounded-xl transition relative ${
-              location.pathname === '/messages'
-                ? 'text-brand-600 font-bold'
-                : 'text-slate-500 hover:text-slate-800'
-            }`}
-          >
-            <Send size={20} strokeWidth={location.pathname === '/messages' ? 2.5 : 2} className="shrink-0" />
-            <span className="text-[10px] mt-0.5 tracking-tight">Messages</span>
-          </Link>
+        <Link
+          to="/messages"
+          className={`flex flex-col items-center justify-center py-1 px-3 rounded-xl transition relative ${
+            location.pathname === '/messages'
+              ? 'text-indigo-700 font-bold bg-indigo-50/90 shadow-2xs'
+              : 'text-slate-500 hover:text-slate-800'
+          }`}
+        >
+          <Send size={20} strokeWidth={location.pathname === '/messages' ? 2.5 : 2} className="shrink-0" />
+          <span className="text-[10px] mt-0.5 tracking-tight font-semibold">Messages</span>
+        </Link>
 
-          <Link
-            to={
-              isStudent
-                ? '/student/curriculum'
-                : isTeacher || isHod
-                ? '/teacher/scanner'
-                : '/attendance/report'
-            }
-            className={`flex flex-col items-center justify-center py-1 px-2.5 rounded-xl transition ${
-              location.pathname.includes('curriculum') ||
-              location.pathname.includes('scanner') ||
-              location.pathname.includes('attendance')
-                ? 'text-brand-600 font-bold'
-                : 'text-slate-500 hover:text-slate-800'
-            }`}
-          >
-            {isStudent ? (
-              <BookOpen size={20} strokeWidth={2} className="shrink-0" />
-            ) : isTeacher || isHod ? (
-              <QrCode size={20} strokeWidth={2} className="shrink-0" />
-            ) : (
-              <CheckCircle2 size={20} strokeWidth={2} className="shrink-0" />
-            )}
-            <span className="text-[10px] mt-0.5 tracking-tight">
-              {isStudent ? 'Courses' : isTeacher || isHod ? 'Scan QR' : 'Audit'}
-            </span>
-          </Link>
+        <Link
+          to={
+            isStudent
+              ? '/student/curriculum'
+              : isTeacher || isHod
+              ? '/teacher/scanner'
+              : '/attendance/report'
+          }
+          className={`flex flex-col items-center justify-center py-1 px-3 rounded-xl transition ${
+            location.pathname.includes('curriculum') ||
+            location.pathname.includes('scanner') ||
+            location.pathname.includes('attendance')
+              ? 'text-emerald-700 font-bold bg-emerald-50/90 shadow-2xs'
+              : 'text-slate-500 hover:text-slate-800'
+          }`}
+        >
+          {isStudent ? (
+            <BookOpen size={20} strokeWidth={2} className="shrink-0" />
+          ) : isTeacher || isHod ? (
+            <QrCode size={20} strokeWidth={2} className="shrink-0" />
+          ) : (
+            <CheckCircle2 size={20} strokeWidth={2} className="shrink-0" />
+          )}
+          <span className="text-[10px] mt-0.5 tracking-tight font-semibold">
+            {isStudent ? 'Courses' : isTeacher || isHod ? 'Scan QR' : 'Audit'}
+          </span>
+        </Link>
 
-          <button
-            type="button"
-            onClick={() => setMobileMenuOpen(true)}
-            className="flex flex-col items-center justify-center py-1 px-2.5 rounded-xl text-slate-500 hover:text-slate-800 transition cursor-pointer"
-          >
-            <Menu size={20} strokeWidth={2} className="shrink-0" />
-            <span className="text-[10px] mt-0.5 tracking-tight">All Tabs</span>
-          </button>
-        </nav>
-      )}
+        <button
+          type="button"
+          onClick={() => setMobileMenuOpen(true)}
+          className="flex flex-col items-center justify-center py-1 px-3 rounded-xl text-slate-500 hover:text-slate-800 transition cursor-pointer"
+        >
+          <Menu size={20} strokeWidth={2} className="shrink-0" />
+          <span className="text-[10px] mt-0.5 tracking-tight font-semibold">All Tabs</span>
+        </button>
+      </nav>
 
       {/* Floating Real-Time Chat Navigation Button */}
       <FloatingChatButton />

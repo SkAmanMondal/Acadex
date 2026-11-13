@@ -147,8 +147,24 @@ export const getAcademicRiskIndicators = async (req, res) => {
   }
 };
 
+let lastEnsuredDate = null;
+let lastEnsuredTimestamp = 0;
+
+const throttleEnsureDailyClasses = async (todayStr) => {
+  const now = Date.now();
+  if (lastEnsuredDate === todayStr && now - lastEnsuredTimestamp < 5 * 60 * 1000) {
+    return;
+  }
+  lastEnsuredDate = todayStr;
+  lastEnsuredTimestamp = now;
+  await ensureDailyClassesForDate(todayStr).catch(() => {});
+};
+
+let adminMetricsCache = null;
+let adminMetricsCacheTime = 0;
+
 /**
- * Tailored, role-specific real-time dashboard metrics
+ * Tailored, role-specific real-time dashboard metrics (High Performance Cached & Lean)
  */
 export const getDashboardMetrics = async (req, res) => {
   try {
@@ -157,6 +173,11 @@ export const getDashboardMetrics = async (req, res) => {
 
     // 1. ADMIN DASHBOARD METRICS
     if (role === 'college_admin' || role === 'super_admin') {
+      const now = Date.now();
+      if (adminMetricsCache && now - adminMetricsCacheTime < 15 * 1000) {
+        return sendSuccess(res, 'Admin overview metrics (cached)', adminMetricsCache);
+      }
+
       const [
         totalStudents,
         totalTeachers,
@@ -167,7 +188,6 @@ export const getDashboardMetrics = async (req, res) => {
         totalQuizzes,
         totalAssignments,
         activeAttendanceSessions,
-        riskIndicators,
       ] = await Promise.all([
         User.countDocuments({ role: 'student', isActive: true }),
         User.countDocuments({ role: { $in: ['teacher', 'hod'] }, isActive: true }),
@@ -178,10 +198,9 @@ export const getDashboardMetrics = async (req, res) => {
         Quiz.countDocuments({}),
         Assignment.countDocuments({}),
         AttendanceSession.countDocuments({ status: 'active' }),
-        AttendanceRecord.countDocuments({ status: 'present' }),
       ]);
 
-      return sendSuccess(res, 'Admin overview metrics', {
+      const adminPayload = {
         role: 'college_admin',
         totalStudents,
         totalTeachers,
@@ -192,11 +211,16 @@ export const getDashboardMetrics = async (req, res) => {
         totalQuizzes,
         totalAssignments,
         activeAttendanceSessions,
-      });
+      };
+
+      adminMetricsCache = adminPayload;
+      adminMetricsCacheTime = now;
+
+      return sendSuccess(res, 'Admin overview metrics', adminPayload);
     }
 
     const todayStr = formatDateToYMD(new Date());
-    await ensureDailyClassesForDate(todayStr).catch(() => {});
+    await throttleEnsureDailyClasses(todayStr);
 
     // 2. HOD DASHBOARD METRICS
     if (role === 'hod') {
@@ -220,21 +244,24 @@ export const getDashboardMetrics = async (req, res) => {
         Material.countDocuments({ department: deptId }),
         AttendanceSession.findOne({ teacher: userId, status: { $in: ['active', 'pending'] } })
           .sort({ createdAt: -1 })
-          .populate('subject batch classroom', 'name code roomNumber'),
+          .populate('subject batch classroom', 'name code roomNumber')
+          .lean(),
         DailyClass.find({ date: todayStr, department: deptId })
           .populate('subject batch classroom teacher originalTeacher', 'name code roomNumber')
-          .sort({ startTime: 1 }),
+          .sort({ startTime: 1 })
+          .lean(),
         DailyClass.find({ date: todayStr, teacher: userId })
           .populate('subject batch classroom teacher originalTeacher', 'name code roomNumber')
-          .sort({ startTime: 1 }),
+          .sort({ startTime: 1 })
+          .lean(),
       ]);
 
       // Calculate department attendance shortage defaulters count (< 75%)
       let deptDefaultersCount = 0;
       try {
-        const deptBatchesList = await Batch.find({ department: deptId }).select('_id');
+        const deptBatchesList = await Batch.find({ department: deptId }).select('_id').lean();
         const deptBatchIds = deptBatchesList.map((b) => b._id);
-        const deptProfiles = await StudentProfile.find({ batch: { $in: deptBatchIds } }).select('user batch');
+        const deptProfiles = await StudentProfile.find({ batch: { $in: deptBatchIds } }).select('user batch').lean();
         if (deptProfiles.length > 0) {
           const batchSessionsAgg = await AttendanceSession.aggregate([
             { $match: { batch: { $in: deptBatchIds } } },
@@ -293,7 +320,7 @@ export const getDashboardMetrics = async (req, res) => {
         activeSession,
         myDailyClasses,
       ] = await Promise.all([
-        Timetable.find({ teacher: userId }).populate('subject batch classroom', 'name code roomNumber'),
+        Timetable.find({ teacher: userId }).select('subject batch classroom startTime endTime day').populate('subject batch classroom', 'name code roomNumber').lean(),
         Material.countDocuments({ teacher: userId }),
         Assignment.countDocuments({ teacher: userId }),
         Quiz.countDocuments({ createdBy: userId }),
@@ -301,16 +328,19 @@ export const getDashboardMetrics = async (req, res) => {
         Submission.countDocuments({ status: 'submitted' }),
         AttendanceSession.findOne({ teacher: userId, status: { $in: ['active', 'pending'] } })
           .sort({ createdAt: -1 })
-          .populate('subject batch classroom', 'name code roomNumber'),
+          .populate('subject batch classroom', 'name code roomNumber')
+          .lean(),
         DailyClass.find({ date: todayStr, teacher: userId })
+          .select('subject batch classroom teacher originalTeacher startTime endTime status isSubstituted pauseReason')
           .populate('subject batch classroom teacher originalTeacher', 'name code roomNumber')
-          .sort({ startTime: 1 }),
+          .sort({ startTime: 1 })
+          .lean(),
       ]);
 
       // Calculate attendance defaulters count among teacher's mentees (< 75%)
       let menteeDefaultersCount = 0;
       try {
-        const menteeProfiles = await StudentProfile.find({ mentor: userId }).select('user batch');
+        const menteeProfiles = await StudentProfile.find({ mentor: userId }).select('user batch').lean();
         if (menteeProfiles.length > 0) {
           const menteeBatchIds = [...new Set(menteeProfiles.map((p) => p.batch?.toString()).filter(Boolean))];
           const batchSessionsAgg = await AttendanceSession.aggregate([
@@ -357,15 +387,17 @@ export const getDashboardMetrics = async (req, res) => {
       });
     }
 
-    // 4. STUDENT DASHBOARD METRICS
+    // 4. STUDENT DASHBOARD METRICS (High Performance: countDocuments & lean projection)
     if (role === 'student') {
       const profile = await StudentProfile.findOne({ user: userId })
-        .populate('batch course department mentor', 'name code email');
+        .select('rollNumber batch course department mentor')
+        .populate('batch course department mentor', 'name code email')
+        .lean();
 
       const batchId = profile?.batch?._id || profile?.batch;
 
       const [
-        myRecords,
+        attended,
         totalBatchSessions,
         todaySlotsMaster,
         todayDailyClasses,
@@ -373,20 +405,21 @@ export const getDashboardMetrics = async (req, res) => {
         pendingAssignments,
         recentSubmissions,
       ] = await Promise.all([
-        AttendanceRecord.find({ student: userId, status: 'present' }),
+        AttendanceRecord.countDocuments({ student: userId, status: 'present' }),
         batchId ? AttendanceSession.countDocuments({ batch: batchId }) : 0,
-        batchId ? Timetable.find({ batch: batchId }).populate('subject classroom teacher', 'name code roomNumber') : [],
+        batchId ? Timetable.find({ batch: batchId }).select('subject classroom teacher startTime endTime day').populate('subject classroom teacher', 'name code roomNumber').lean() : [],
         batchId
           ? DailyClass.find({ date: todayStr, batch: batchId })
+              .select('subject classroom teacher originalTeacher startTime endTime status isSubstituted pauseReason')
               .populate('subject classroom teacher originalTeacher', 'name code roomNumber')
               .sort({ startTime: 1 })
+              .lean()
           : [],
-        batchId ? Quiz.find({ batch: batchId, isPublished: true }).populate('subject', 'name code') : [],
-        batchId ? Assignment.find({ batch: batchId }).populate('subject', 'name code') : [],
-        Submission.find({ student: userId }),
+        batchId ? Quiz.find({ batch: batchId, isPublished: true }).select('title description duration subject deadline totalMarks').populate('subject', 'name code').limit(5).lean() : [],
+        batchId ? Assignment.find({ batch: batchId }).select('title dueDate subject maxMarks').populate('subject', 'name code').limit(5).lean() : [],
+        Submission.find({ student: userId }).select('assignment status').lean(),
       ]);
 
-      const attended = myRecords.length;
       const effectiveConducted = Math.max(totalBatchSessions, attended);
       const attendancePercent = effectiveConducted > 0 ? Math.round((attended / effectiveConducted) * 100) : 100;
       const isDefaulter = attendancePercent < 75;
@@ -397,7 +430,7 @@ export const getDashboardMetrics = async (req, res) => {
       // Recover mentor from batch if missing on profile
       let mentorObj = profile?.mentor ? { _id: profile.mentor._id, name: profile.mentor.name, email: profile.mentor.email } : null;
       if (!mentorObj && profile?.batch?.mentor) {
-        const batchMentor = await User.findById(profile.batch.mentor).select('name email');
+        const batchMentor = await User.findById(profile.batch.mentor).select('name email').lean();
         if (batchMentor) {
           mentorObj = { _id: batchMentor._id, name: batchMentor.name, email: batchMentor.email };
         }

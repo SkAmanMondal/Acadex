@@ -25,21 +25,32 @@ import {
 
 export default function TeacherDashboard({ user }) {
   const { socket } = useSocket();
-  const [metrics, setMetrics] = useState(null);
+  const [metrics, setMetrics] = useState(() => {
+    try {
+      const cached = sessionStorage.getItem(`acadex_teacher_metrics_${user?._id}`);
+      return cached ? JSON.parse(cached) : null;
+    } catch {
+      return null;
+    }
+  });
   const [activeSession, setActiveSession] = useState(null);
   const [showSessionModal, setShowSessionModal] = useState(false);
   const [activatingSlotId, setActivatingSlotId] = useState('');
   const [activationMsg, setActivationMsg] = useState({ type: '', text: '' });
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(!metrics);
 
-  const loadTeacherData = async () => {
+  const loadTeacherData = async (isSilent = false) => {
     try {
-      setLoading(true);
+      if (!isSilent && !metrics) setLoading(true);
       const res = await api.get('/analytics/dashboard-metrics');
       if (res.data?.success) {
-        setMetrics(res.data.data);
-        if (res.data.data.activeSession) {
-          setActiveSession(res.data.data.activeSession);
+        const data = res.data.data;
+        setMetrics(data);
+        try {
+          sessionStorage.setItem(`acadex_teacher_metrics_${user?._id}`, JSON.stringify(data));
+        } catch {}
+        if (data.activeSession) {
+          setActiveSession(data.activeSession);
         }
       }
     } catch (err) {
@@ -50,11 +61,11 @@ export default function TeacherDashboard({ user }) {
   };
 
   useEffect(() => {
-    loadTeacherData();
+    loadTeacherData(Boolean(metrics));
   }, []);
 
   // Zero-refresh automatic live synchronization on classes, attendance & academic updates
-  useRealtimeSync(['attendance_updated', 'timetable_updated', 'dashboard_refresh', 'mentorship_updated'], loadTeacherData);
+  useRealtimeSync(['attendance_updated', 'timetable_updated', 'dashboard_refresh', 'mentorship_updated'], () => loadTeacherData(true));
 
   // Real-time socket event listeners for teacher
   useEffect(() => {
@@ -256,42 +267,62 @@ export default function TeacherDashboard({ user }) {
 
       {/* 3. Operational KPI Metrics Row */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-        <div className="bg-white p-5 rounded-2xl border border-slate-200/80 shadow-sm">
-          <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
-            Assigned Slots
+        <div className="bg-gradient-to-br from-white to-indigo-50/50 p-4 sm:p-5 rounded-2xl border-2 border-indigo-200/90 border-t-4 border-t-indigo-500 shadow-xs flex items-center justify-between">
+          <div>
+            <span className="text-[10px] font-bold uppercase tracking-wider text-indigo-800">
+              Assigned Slots
+            </span>
+            <p className="text-2xl font-black text-slate-900 mt-1 tabular-nums">{metrics?.totalSlots || 0}</p>
+            <p className="text-[11px] text-slate-500 mt-0.5">Weekly lectures & labs</p>
+          </div>
+          <span className="w-10 h-10 rounded-2xl bg-indigo-100 text-indigo-700 flex items-center justify-center shrink-0 shadow-2xs">
+            <Calendar size={18} />
           </span>
-          <p className="text-2xl font-extrabold text-slate-900 mt-1">{metrics?.totalSlots || 0}</p>
-          <p className="text-[11px] text-slate-500 mt-0.5">Weekly lectures & labs</p>
         </div>
 
-        <div className="bg-white p-5 rounded-2xl border border-slate-200/80 shadow-sm">
-          <span className="text-[10px] font-bold uppercase tracking-wider text-amber-500">
-            Pending Submissions
+        <div className="bg-gradient-to-br from-white to-amber-50/50 p-4 sm:p-5 rounded-2xl border-2 border-amber-200/90 border-t-4 border-t-amber-500 shadow-xs flex items-center justify-between">
+          <div>
+            <span className="text-[10px] font-bold uppercase tracking-wider text-amber-800">
+              Pending Submissions
+            </span>
+            <p className="text-2xl font-black text-amber-700 mt-1 tabular-nums">{metrics?.pendingGrades || 0}</p>
+            <Link to="/assignments" className="text-[11px] text-amber-800 font-bold hover:underline mt-0.5 block">
+              Evaluate Work →
+            </Link>
+          </div>
+          <span className="w-10 h-10 rounded-2xl bg-amber-100 text-amber-700 flex items-center justify-center shrink-0 shadow-2xs">
+            <FileText size={18} />
           </span>
-          <p className="text-2xl font-extrabold text-amber-600 mt-1">{metrics?.pendingGrades || 0}</p>
-          <Link to="/assignments" className="text-[11px] text-brand-600 font-bold hover:underline mt-0.5 block">
-            Evaluate Work →
-          </Link>
         </div>
 
-        <div className="bg-white p-5 rounded-2xl border border-slate-200/80 shadow-sm">
-          <span className="text-[10px] font-bold uppercase tracking-wider text-indigo-500">
-            Active Quizzes
+        <div className="bg-gradient-to-br from-white to-purple-50/50 p-4 sm:p-5 rounded-2xl border-2 border-purple-200/90 border-t-4 border-t-purple-500 shadow-xs flex items-center justify-between">
+          <div>
+            <span className="text-[10px] font-bold uppercase tracking-wider text-purple-800">
+              Active Quizzes
+            </span>
+            <p className="text-2xl font-black text-purple-900 mt-1 tabular-nums">{metrics?.totalQuizzes || 0}</p>
+            <Link to="/quizzes" className="text-[11px] text-purple-700 font-bold hover:underline mt-0.5 block">
+              + Author Quiz →
+            </Link>
+          </div>
+          <span className="w-10 h-10 rounded-2xl bg-purple-100 text-purple-700 flex items-center justify-center shrink-0 shadow-2xs">
+            <Award size={18} />
           </span>
-          <p className="text-2xl font-extrabold text-indigo-900 mt-1">{metrics?.totalQuizzes || 0}</p>
-          <Link to="/quizzes" className="text-[11px] text-indigo-600 font-bold hover:underline mt-0.5 block">
-            + Author Quiz →
-          </Link>
         </div>
 
-        <div className="bg-white p-5 rounded-2xl border border-slate-200/80 shadow-sm">
-          <span className="text-[10px] font-bold uppercase tracking-wider text-purple-500">
-            Assigned Mentees
+        <div className="bg-gradient-to-br from-white to-emerald-50/50 p-4 sm:p-5 rounded-2xl border-2 border-emerald-200/90 border-t-4 border-t-emerald-500 shadow-xs flex items-center justify-between">
+          <div>
+            <span className="text-[10px] font-bold uppercase tracking-wider text-emerald-800">
+              Assigned Mentees
+            </span>
+            <p className="text-2xl font-black text-emerald-800 mt-1 tabular-nums">{metrics?.totalMentees || 0}</p>
+            <Link to="/mentorship" className="text-[11px] text-emerald-700 font-bold hover:underline mt-0.5 block">
+              Mentee Support →
+            </Link>
+          </div>
+          <span className="w-10 h-10 rounded-2xl bg-emerald-100 text-emerald-700 flex items-center justify-center shrink-0 shadow-2xs">
+            <Users size={18} />
           </span>
-          <p className="text-2xl font-extrabold text-purple-900 mt-1">{metrics?.totalMentees || 0}</p>
-          <Link to="/mentorship" className="text-[11px] text-purple-600 font-bold hover:underline mt-0.5 block">
-            Mentee Support →
-          </Link>
         </div>
       </div>
 
@@ -299,10 +330,12 @@ export default function TeacherDashboard({ user }) {
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
         {/* Left: Today's Lectures & Quick Launch Attendance */}
         <div className="lg:col-span-8 space-y-6">
-          <div className="bg-white rounded-3xl border border-slate-200/80 p-6 shadow-sm space-y-4">
+          <div className="bg-white rounded-3xl border-2 border-slate-200/90 border-t-4 border-t-brand-500 p-5 sm:p-6 shadow-xs space-y-4">
             <div className="flex items-center justify-between pb-3 border-b border-slate-100">
               <div className="flex items-center gap-2">
-                <Calendar size={18} className="text-brand-600" />
+                <span className="w-8 h-8 rounded-xl bg-brand-50 text-brand-600 flex items-center justify-center">
+                  <Calendar size={18} />
+                </span>
                 <h3 className="text-sm font-extrabold text-slate-900">Today's Teaching Schedule</h3>
               </div>
               <Link to="/timetables" className="text-xs font-bold text-brand-600 hover:text-brand-700">

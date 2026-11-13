@@ -20,14 +20,21 @@ import {
 } from 'lucide-react';
 
 export default function AdminDashboard({ user }) {
-  const [metrics, setMetrics] = useState(null);
+  const [metrics, setMetrics] = useState(() => {
+    try {
+      const cached = sessionStorage.getItem('acadex_admin_metrics');
+      return cached ? JSON.parse(cached) : null;
+    } catch {
+      return null;
+    }
+  });
   const [departments, setDepartments] = useState([]);
   const [courses, setCourses] = useState([]);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(!metrics);
 
-  const loadAdminData = async () => {
+  const loadAdminData = async (isSilent = false) => {
     try {
-      setLoading(true);
+      if (!isSilent && !metrics) setLoading(true);
       const [metRes, deptRes, couRes] = await Promise.allSettled([
         api.get('/analytics/dashboard-metrics'),
         api.get('/academics/departments'),
@@ -35,7 +42,11 @@ export default function AdminDashboard({ user }) {
       ]);
 
       if (metRes.status === 'fulfilled' && metRes.value.data?.success) {
-        setMetrics(metRes.value.data.data);
+        const data = metRes.value.data.data;
+        setMetrics(data);
+        try {
+          sessionStorage.setItem('acadex_admin_metrics', JSON.stringify(data));
+        } catch {}
       }
       if (deptRes.status === 'fulfilled' && deptRes.value.data?.success) {
         setDepartments(deptRes.value.data.data);
@@ -51,11 +62,11 @@ export default function AdminDashboard({ user }) {
   };
 
   useEffect(() => {
-    loadAdminData();
+    loadAdminData(Boolean(metrics));
   }, []);
 
   // Zero-refresh automatic live synchronization on any institution/analytics change
-  useRealtimeSync(['students_updated', 'academics_updated', 'batch_updated', 'attendance_updated', 'dashboard_refresh'], loadAdminData);
+  useRealtimeSync(['students_updated', 'academics_updated', 'batch_updated', 'attendance_updated', 'dashboard_refresh'], () => loadAdminData(true));
 
   return (
     <div className="space-y-6">
@@ -99,45 +110,75 @@ export default function AdminDashboard({ user }) {
       </div>
 
       {/* 2. College-Wide Macro KPI Metrics */}
-      <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4">
-        <div className="bg-white p-5 rounded-2xl border border-slate-200/80 shadow-sm">
-          <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Total Students</span>
-          <p className="text-2xl font-extrabold text-slate-900 mt-1">{metrics?.totalStudents || 0}</p>
-          <Link to="/admin/students" className="text-[11px] text-brand-600 font-bold hover:underline mt-0.5 block">
+      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3.5 sm:gap-4">
+        <div className="bg-gradient-to-br from-white to-indigo-50/50 p-4 sm:p-5 rounded-2xl border-2 border-indigo-200/90 border-t-4 border-t-indigo-500 shadow-xs flex flex-col justify-between">
+          <div className="flex items-center justify-between">
+            <span className="text-[10px] font-bold uppercase tracking-wider text-indigo-800">Total Students</span>
+            <span className="w-7 h-7 rounded-lg bg-indigo-100 text-indigo-700 flex items-center justify-center">
+              <GraduationCap size={15} />
+            </span>
+          </div>
+          <p className="text-2xl font-black text-slate-900 mt-2 tabular-nums">{metrics?.totalStudents || 0}</p>
+          <Link to="/admin/students" className="text-[11px] text-brand-600 font-bold hover:underline mt-1 block">
             Student Registry →
           </Link>
         </div>
 
-        <div className="bg-white p-5 rounded-2xl border border-slate-200/80 shadow-sm">
-          <span className="text-[10px] font-bold uppercase tracking-wider text-indigo-500">Faculty & Staff</span>
-          <p className="text-2xl font-extrabold text-indigo-900 mt-1">{metrics?.totalTeachers || 0}</p>
-          <Link to="/admin/teachers" className="text-[11px] text-indigo-600 font-bold hover:underline mt-0.5 block">
+        <div className="bg-gradient-to-br from-white to-blue-50/50 p-4 sm:p-5 rounded-2xl border-2 border-blue-200/90 border-t-4 border-t-blue-500 shadow-xs flex flex-col justify-between">
+          <div className="flex items-center justify-between">
+            <span className="text-[10px] font-bold uppercase tracking-wider text-blue-800">Faculty & Staff</span>
+            <span className="w-7 h-7 rounded-lg bg-blue-100 text-blue-700 flex items-center justify-center">
+              <Users size={15} />
+            </span>
+          </div>
+          <p className="text-2xl font-black text-blue-900 mt-2 tabular-nums">{metrics?.totalTeachers || 0}</p>
+          <Link to="/admin/teachers" className="text-[11px] text-blue-700 font-bold hover:underline mt-1 block">
             Faculty Roster →
           </Link>
         </div>
 
-        <div className="bg-white p-5 rounded-2xl border border-slate-200/80 shadow-sm">
-          <span className="text-[10px] font-bold uppercase tracking-wider text-emerald-500">Departments</span>
-          <p className="text-2xl font-extrabold text-emerald-700 mt-1">{metrics?.totalDepartments || 0}</p>
-          <p className="text-[11px] text-slate-500 mt-0.5">CSA, CSE, AIDS</p>
+        <div className="bg-gradient-to-br from-white to-emerald-50/50 p-4 sm:p-5 rounded-2xl border-2 border-emerald-200/90 border-t-4 border-t-emerald-500 shadow-xs flex flex-col justify-between">
+          <div className="flex items-center justify-between">
+            <span className="text-[10px] font-bold uppercase tracking-wider text-emerald-800">Departments</span>
+            <span className="w-7 h-7 rounded-lg bg-emerald-100 text-emerald-700 flex items-center justify-center">
+              <Building size={15} />
+            </span>
+          </div>
+          <p className="text-2xl font-black text-emerald-800 mt-2 tabular-nums">{metrics?.totalDepartments || 0}</p>
+          <p className="text-[11px] text-slate-500 mt-1">CSA, CSE, AIDS</p>
         </div>
 
-        <div className="bg-white p-5 rounded-2xl border border-slate-200/80 shadow-sm">
-          <span className="text-[10px] font-bold uppercase tracking-wider text-purple-500">Degree Programs</span>
-          <p className="text-2xl font-extrabold text-purple-900 mt-1">{metrics?.totalCourses || 0}</p>
-          <p className="text-[11px] text-slate-500 mt-0.5">MCA, B.Tech</p>
+        <div className="bg-gradient-to-br from-white to-violet-50/50 p-4 sm:p-5 rounded-2xl border-2 border-violet-200/90 border-t-4 border-t-violet-500 shadow-xs flex flex-col justify-between">
+          <div className="flex items-center justify-between">
+            <span className="text-[10px] font-bold uppercase tracking-wider text-violet-800">Degree Programs</span>
+            <span className="w-7 h-7 rounded-lg bg-violet-100 text-violet-700 flex items-center justify-center">
+              <BookOpen size={15} />
+            </span>
+          </div>
+          <p className="text-2xl font-black text-violet-900 mt-2 tabular-nums">{metrics?.totalCourses || 0}</p>
+          <p className="text-[11px] text-slate-500 mt-1">MCA, B.Tech</p>
         </div>
 
-        <div className="bg-white p-5 rounded-2xl border border-slate-200/80 shadow-sm">
-          <span className="text-[10px] font-bold uppercase tracking-wider text-amber-500">Active Batches</span>
-          <p className="text-2xl font-extrabold text-amber-700 mt-1">{metrics?.totalBatches || 0}</p>
-          <p className="text-[11px] text-slate-500 mt-0.5">Cohorts 2023-28</p>
+        <div className="bg-gradient-to-br from-white to-amber-50/50 p-4 sm:p-5 rounded-2xl border-2 border-amber-200/90 border-t-4 border-t-amber-500 shadow-xs flex flex-col justify-between">
+          <div className="flex items-center justify-between">
+            <span className="text-[10px] font-bold uppercase tracking-wider text-amber-800">Active Batches</span>
+            <span className="w-7 h-7 rounded-lg bg-amber-100 text-amber-700 flex items-center justify-center">
+              <Calendar size={15} />
+            </span>
+          </div>
+          <p className="text-2xl font-black text-amber-800 mt-2 tabular-nums">{metrics?.totalBatches || 0}</p>
+          <p className="text-[11px] text-slate-500 mt-1">Cohorts 2023-28</p>
         </div>
 
-        <div className="bg-white p-5 rounded-2xl border border-slate-200/80 shadow-sm">
-          <span className="text-[10px] font-bold uppercase tracking-wider text-rose-500">Repository Files</span>
-          <p className="text-2xl font-extrabold text-rose-700 mt-1">{metrics?.totalMaterials || 0}</p>
-          <p className="text-[11px] text-slate-500 mt-0.5">Uploaded resources</p>
+        <div className="bg-gradient-to-br from-white to-rose-50/50 p-4 sm:p-5 rounded-2xl border-2 border-rose-200/90 border-t-4 border-t-rose-500 shadow-xs flex flex-col justify-between">
+          <div className="flex items-center justify-between">
+            <span className="text-[10px] font-bold uppercase tracking-wider text-rose-800">Repository Files</span>
+            <span className="w-7 h-7 rounded-lg bg-rose-100 text-rose-700 flex items-center justify-center">
+              <Award size={15} />
+            </span>
+          </div>
+          <p className="text-2xl font-black text-rose-800 mt-2 tabular-nums">{metrics?.totalMaterials || 0}</p>
+          <p className="text-[11px] text-slate-500 mt-1">Uploaded resources</p>
         </div>
       </div>
 

@@ -23,39 +23,62 @@ import {
 } from 'lucide-react';
 
 export default function StudentDashboard({ user }) {
-  const [metrics, setMetrics] = useState(null);
-  const [announcements, setAnnouncements] = useState([]);
-  const [loading, setLoading] = useState(true);
-
-  const loadStudentData = useCallback(async () => {
+  // Instant retrieval from sessionStorage to eliminate mobile blank delay (0ms load)
+  const [metrics, setMetrics] = useState(() => {
     try {
-      setLoading(true);
+      const cached = sessionStorage.getItem(`acadex_student_metrics_${user?._id}`);
+      return cached ? JSON.parse(cached) : null;
+    } catch {
+      return null;
+    }
+  });
+  const [announcements, setAnnouncements] = useState(() => {
+    try {
+      const cached = sessionStorage.getItem('acadex_announcements');
+      return cached ? JSON.parse(cached) : [];
+    } catch {
+      return [];
+    }
+  });
+  const [loading, setLoading] = useState(!metrics);
+
+  const loadStudentData = useCallback(async (isSilent = false) => {
+    try {
+      if (!isSilent && !metrics) setLoading(true);
       const [metRes, annRes] = await Promise.allSettled([
         api.get('/analytics/dashboard-metrics'),
         api.get('/communication/announcements'),
       ]);
 
       if (metRes.status === 'fulfilled' && metRes.value.data?.success) {
-        setMetrics(metRes.value.data.data);
+        const data = metRes.value.data.data;
+        setMetrics(data);
+        try {
+          sessionStorage.setItem(`acadex_student_metrics_${user?._id}`, JSON.stringify(data));
+        } catch {}
       }
       if (annRes.status === 'fulfilled' && annRes.value.data?.success) {
-        setAnnouncements(annRes.value.data.data.slice(0, 3));
+        const annList = annRes.value.data.data.slice(0, 3);
+        setAnnouncements(annList);
+        try {
+          sessionStorage.setItem('acadex_announcements', JSON.stringify(annList));
+        } catch {}
       }
     } catch (err) {
       console.error(err);
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [user?._id, metrics]);
 
   useEffect(() => {
-    loadStudentData();
+    loadStudentData(Boolean(metrics));
   }, [loadStudentData]);
 
   // Zero-refresh automatic live synchronization for student dashboard
   useRealtimeSync(
     ['attendance_updated', 'timetable_updated', 'new_announcement', 'dashboard_refresh', 'marks_updated', 'assignments_updated'],
-    loadStudentData
+    () => loadStudentData(true)
   );
 
   const attendance = metrics?.attendance || { attended: 0, conducted: 0, percentage: 100, isDefaulter: false };
@@ -63,6 +86,33 @@ export default function StudentDashboard({ user }) {
   const quizzes = metrics?.availableQuizzes || [];
   const assignments = metrics?.pendingAssignments || [];
   const profile = metrics?.profile || {};
+
+  // Modern Shimmer Skeleton for First-Time Mobile Visitors
+  if (loading && !metrics) {
+    return (
+      <div className="space-y-6 animate-pulse">
+        <div className="h-44 rounded-3xl bg-gradient-to-r from-brand-600/30 via-indigo-600/30 to-blue-600/30 p-6 md:p-8" />
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
+          <div className="h-32 rounded-3xl bg-slate-200/70 border border-slate-300/40" />
+          <div className="h-32 rounded-3xl bg-slate-200/70 border border-slate-300/40" />
+          <div className="h-32 rounded-3xl bg-slate-200/70 border border-slate-300/40" />
+        </div>
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+          <div className="lg:col-span-8 space-y-6">
+            <div className="h-64 rounded-3xl bg-slate-200/70" />
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+              <div className="h-44 rounded-3xl bg-slate-200/70" />
+              <div className="h-44 rounded-3xl bg-slate-200/70" />
+            </div>
+          </div>
+          <div className="lg:col-span-4 space-y-6">
+            <div className="h-60 rounded-3xl bg-slate-200/70" />
+            <div className="h-44 rounded-3xl bg-slate-200/70" />
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">
@@ -210,31 +260,32 @@ export default function StudentDashboard({ user }) {
       {/* 2. Top Metric Cards: Attendance Compliance & Academic Health */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
         {/* Attendance Compliance Gauge */}
-        <div className="bg-white rounded-3xl border border-slate-200/80 p-5 shadow-sm flex items-center justify-between">
+        <div className="bg-gradient-to-br from-white via-white to-emerald-50/60 rounded-3xl border-2 border-emerald-200/90 border-t-4 border-t-emerald-500 p-5 shadow-xs flex items-center justify-between">
           <div>
-            <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
+            <span className="text-[10px] font-bold uppercase tracking-wider text-emerald-800 flex items-center gap-1">
+              <CheckCircle size={12} className="text-emerald-600" />
               Attendance Compliance
             </span>
             <div className="flex items-baseline gap-2 mt-1">
-              <span className="text-3xl font-black text-slate-900">{attendance.percentage}%</span>
-              <span className="text-xs text-slate-500 font-medium">
+              <span className="text-3xl font-black text-slate-900 tracking-tight tabular-nums">{attendance.percentage}%</span>
+              <span className="text-xs text-slate-500 font-semibold">
                 ({attendance.attended}/{attendance.conducted} lectures)
               </span>
             </div>
             <div className="mt-2">
               {attendance.isDefaulter ? (
                 <span
-                  className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold border ${
+                  className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-black border ${
                     attendance.isCritical || attendance.percentage < 60
-                      ? 'bg-rose-50 text-rose-700 border-rose-200'
-                      : 'bg-amber-50 text-amber-800 border-amber-200'
+                      ? 'bg-rose-100 text-rose-800 border-rose-300'
+                      : 'bg-amber-100 text-amber-900 border-amber-300'
                   }`}
                 >
                   <AlertTriangle size={11} />
                   {attendance.isCritical || attendance.percentage < 60 ? 'Critical Debarred (<60%)' : 'Shortage Warning (<75%)'}
                 </span>
               ) : (
-                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-300">
                   <CheckCircle size={11} />
                   Exam Eligible (&ge;75%)
                 </span>
@@ -243,7 +294,7 @@ export default function StudentDashboard({ user }) {
           </div>
 
           <div
-            className={`w-14 h-14 rounded-full flex items-center justify-center font-extrabold text-base border-4 ${
+            className={`w-14 h-14 rounded-full flex items-center justify-center font-extrabold text-base border-4 shrink-0 shadow-xs ${
               attendance.isDefaulter
                 ? attendance.isCritical || attendance.percentage < 60
                   ? 'border-rose-500 text-rose-600 bg-rose-50'
@@ -256,20 +307,21 @@ export default function StudentDashboard({ user }) {
         </div>
 
         {/* Assigned Academic Mentor Card */}
-        <div className="bg-white rounded-3xl border border-slate-200/80 p-5 shadow-sm flex flex-col justify-between">
+        <div className="bg-gradient-to-br from-white via-white to-indigo-50/60 rounded-3xl border-2 border-indigo-200/90 border-t-4 border-t-indigo-500 p-5 shadow-xs flex flex-col justify-between">
           <div>
-            <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
+            <span className="text-[10px] font-bold uppercase tracking-wider text-indigo-800 flex items-center gap-1">
+              <UserCheck size={12} className="text-indigo-600" />
               Assigned Academic Mentor
             </span>
-            <div className="flex items-center gap-2.5 mt-2">
-              <div className="w-9 h-9 rounded-xl bg-indigo-50 border border-indigo-200 text-indigo-700 font-bold text-sm flex items-center justify-center">
+            <div className="flex items-center gap-3 mt-2">
+              <div className="w-10 h-10 rounded-2xl bg-indigo-100 border border-indigo-300 text-indigo-800 font-extrabold text-sm flex items-center justify-center shrink-0 shadow-2xs">
                 {profile.mentor?.name?.charAt(0) || 'M'}
               </div>
-              <div>
-                <h4 className="text-xs font-extrabold text-slate-900">
+              <div className="min-w-0">
+                <h4 className="text-xs font-extrabold text-slate-900 truncate">
                   {profile.mentor?.name || 'Prof. Faculty Mentor'}
                 </h4>
-                <p className="text-[10px] text-slate-500">{profile.mentor?.email || 'mentor@campus360.edu'}</p>
+                <p className="text-[10px] text-slate-500 truncate">{profile.mentor?.email || 'mentor@campus360.edu'}</p>
               </div>
             </div>
           </div>
@@ -286,16 +338,19 @@ export default function StudentDashboard({ user }) {
         </div>
 
         {/* Official Grade Card Quick Link */}
-        <div className="bg-white rounded-3xl border border-slate-200/80 p-5 shadow-sm flex flex-col justify-between">
+        <div className="bg-gradient-to-br from-white via-white to-amber-50/60 rounded-3xl border-2 border-amber-200/90 border-t-4 border-t-amber-500 p-5 shadow-xs flex flex-col justify-between">
           <div>
-            <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
+            <span className="text-[10px] font-bold uppercase tracking-wider text-amber-800 flex items-center gap-1">
+              <Award size={12} className="text-amber-600" />
               Semester Academic Status
             </span>
-            <div className="flex items-center gap-2 mt-1.5">
-              <Award size={22} className="text-amber-500" />
+            <div className="flex items-center gap-3 mt-2">
+              <div className="w-10 h-10 rounded-2xl bg-amber-100 border border-amber-300 text-amber-800 flex items-center justify-center shrink-0 shadow-2xs">
+                <Award size={20} className="text-amber-700" />
+              </div>
               <div>
-                <p className="text-sm font-extrabold text-slate-900">Transcript & Marksheet</p>
-                <p className="text-[11px] text-slate-500">Official Consolidated SGPA</p>
+                <p className="text-xs font-extrabold text-slate-900">Transcript & Marksheet</p>
+                <p className="text-[10px] text-slate-500">Official Consolidated SGPA</p>
               </div>
             </div>
           </div>
@@ -315,10 +370,12 @@ export default function StudentDashboard({ user }) {
         {/* Left Column (8 cols): Today's Schedule & Pending Work */}
         <div className="lg:col-span-8 space-y-6">
           {/* Today's Timetable Schedule */}
-          <div className="bg-white rounded-3xl border border-slate-200/80 p-6 shadow-sm space-y-4">
+          <div className="bg-white rounded-3xl border-2 border-slate-200/90 border-t-4 border-t-brand-500 p-5 sm:p-6 shadow-xs space-y-4">
             <div className="flex items-center justify-between pb-3 border-b border-slate-100">
               <div className="flex items-center gap-2">
-                <Calendar size={18} className="text-brand-600" />
+                <span className="w-8 h-8 rounded-xl bg-brand-50 text-brand-600 flex items-center justify-center">
+                  <Calendar size={18} />
+                </span>
                 <h3 className="text-sm font-extrabold text-slate-900">Today's Class Schedule</h3>
               </div>
               <Link to="/timetables" className="text-xs font-bold text-brand-600 hover:text-brand-700">
@@ -338,22 +395,22 @@ export default function StudentDashboard({ user }) {
                       isPaused
                         ? 'bg-slate-100/90 border-slate-300 opacity-85'
                         : isCompleted
-                        ? 'bg-emerald-50/60 border-emerald-200/80'
-                        : 'bg-slate-50 border-slate-200/80 hover:border-brand-300'
+                        ? 'bg-emerald-50/70 border-emerald-300'
+                        : 'bg-slate-50/80 border-slate-200 hover:border-brand-300 hover:bg-brand-50/30'
                     }`}
                   >
                     <div className="flex items-center gap-3">
                       <div
-                        className={`w-12 h-12 rounded-2xl border flex flex-col items-center justify-center font-bold text-xs shrink-0 ${
+                        className={`w-12 h-12 rounded-2xl border flex flex-col items-center justify-center font-bold text-xs shrink-0 shadow-2xs ${
                           isPaused
                             ? 'bg-slate-200 border-slate-300 text-slate-500'
                             : isCompleted
                             ? 'bg-emerald-100 border-emerald-300 text-emerald-800'
-                            : 'bg-brand-50 border-brand-200 text-brand-700'
+                            : 'bg-brand-100 border-brand-200 text-brand-800'
                         }`}
                       >
-                        <Clock size={14} className="mb-0.5" />
-                        <span className="text-[10px]">{slot.startTime}</span>
+                        <Clock size={14} className="mb-0.5 text-current" />
+                        <span className="text-[10px] font-mono">{slot.startTime}</span>
                       </div>
                       <div>
                         <div className="flex flex-wrap items-center gap-2">
@@ -432,21 +489,23 @@ export default function StudentDashboard({ user }) {
           {/* Pending Coursework & Active Assessments */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
             {/* Active Quizzes */}
-            <div className="bg-white rounded-3xl border border-slate-200/80 p-5 shadow-sm space-y-3">
+            <div className="bg-gradient-to-br from-white to-purple-50/40 rounded-3xl border-2 border-purple-200/90 border-t-4 border-t-purple-500 p-5 shadow-xs space-y-3">
               <div className="flex items-center justify-between pb-2 border-b border-slate-100">
-                <div className="flex items-center gap-1.5 text-xs font-extrabold text-slate-900">
-                  <HelpCircle size={16} className="text-indigo-600" />
+                <div className="flex items-center gap-1.5 text-xs font-extrabold text-purple-900">
+                  <span className="w-6 h-6 rounded-lg bg-purple-100 text-purple-700 flex items-center justify-center">
+                    <HelpCircle size={14} />
+                  </span>
                   <span>Interactive Quizzes</span>
                 </div>
-                <Link to="/quizzes" className="text-[11px] font-bold text-indigo-600">
+                <Link to="/quizzes" className="text-[11px] font-bold text-purple-700 hover:text-purple-900">
                   All Quizzes →
                 </Link>
               </div>
 
               <div className="space-y-2">
                 {quizzes.map((q) => (
-                  <div key={q._id} className="p-3 rounded-2xl bg-indigo-50/50 border border-indigo-100 space-y-1">
-                    <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-indigo-100 text-indigo-700">
+                  <div key={q._id} className="p-3 rounded-2xl bg-white border border-purple-100 space-y-1 shadow-2xs">
+                    <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-purple-100 text-purple-800">
                       {q.subject?.code}
                     </span>
                     <h5 className="text-xs font-bold text-slate-900 line-clamp-1">{q.title}</h5>
@@ -454,7 +513,7 @@ export default function StudentDashboard({ user }) {
                       <span className="text-[10px] text-slate-500">{q.durationMinutes} mins</span>
                       <Link
                         to="/quizzes"
-                        className="text-[11px] font-bold text-indigo-700 hover:text-indigo-900"
+                        className="text-[11px] font-bold text-purple-700 hover:text-purple-900"
                       >
                         Start Quiz →
                       </Link>
@@ -469,20 +528,22 @@ export default function StudentDashboard({ user }) {
             </div>
 
             {/* Pending Coursework Assignments */}
-            <div className="bg-white rounded-3xl border border-slate-200/80 p-5 shadow-sm space-y-3">
+            <div className="bg-gradient-to-br from-white to-amber-50/40 rounded-3xl border-2 border-amber-200/90 border-t-4 border-t-amber-500 p-5 shadow-xs space-y-3">
               <div className="flex items-center justify-between pb-2 border-b border-slate-100">
-                <div className="flex items-center gap-1.5 text-xs font-extrabold text-slate-900">
-                  <FileText size={16} className="text-brand-600" />
+                <div className="flex items-center gap-1.5 text-xs font-extrabold text-amber-900">
+                  <span className="w-6 h-6 rounded-lg bg-amber-100 text-amber-700 flex items-center justify-center">
+                    <FileText size={14} />
+                  </span>
                   <span>Assignments Due</span>
                 </div>
-                <Link to="/assignments" className="text-[11px] font-bold text-brand-600">
+                <Link to="/assignments" className="text-[11px] font-bold text-amber-800 hover:text-amber-950">
                   Submit Work →
                 </Link>
               </div>
 
               <div className="space-y-2">
                 {assignments.map((a) => (
-                  <div key={a._id} className="p-3 rounded-2xl bg-amber-50/50 border border-amber-100 space-y-1">
+                  <div key={a._id} className="p-3 rounded-2xl bg-white border border-amber-200/80 space-y-1 shadow-2xs">
                     <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-amber-100 text-amber-800">
                       {a.subject?.code}
                     </span>
@@ -510,38 +571,42 @@ export default function StudentDashboard({ user }) {
         {/* Right Column (4 cols): Institutional Notices & Quick Links */}
         <div className="lg:col-span-4 space-y-6">
           {/* Announcements Card */}
-          <div className="bg-white rounded-3xl border border-slate-200/80 p-5 shadow-sm space-y-3">
+          <div className="bg-gradient-to-br from-white to-orange-50/40 rounded-3xl border-2 border-orange-200/90 border-t-4 border-t-orange-500 p-5 shadow-xs space-y-3">
             <div className="flex items-center justify-between pb-2 border-b border-slate-100">
-              <div className="flex items-center gap-1.5 text-xs font-extrabold text-slate-900">
-                <Bell size={16} className="text-brand-600" />
+              <div className="flex items-center gap-1.5 text-xs font-extrabold text-orange-950">
+                <span className="w-6 h-6 rounded-lg bg-orange-100 text-orange-600 flex items-center justify-center">
+                  <Bell size={14} />
+                </span>
                 <span>Announcements</span>
               </div>
-              <Link to="/announcements" className="text-[11px] font-bold text-brand-600">
+              <Link to="/announcements" className="text-[11px] font-bold text-orange-700 hover:text-orange-900">
                 View All →
               </Link>
             </div>
 
             <div className="space-y-3">
               {announcements.map((ann) => (
-                <div key={ann._id} className="p-3 rounded-2xl bg-slate-50 border border-slate-200/70 space-y-1">
-                  <span className="text-[9px] uppercase font-bold px-2 py-0.5 rounded-full bg-slate-200/70 text-slate-700">
+                <div key={ann._id} className="p-3 rounded-2xl bg-white border border-orange-200/70 space-y-1 shadow-2xs">
+                  <span className="text-[9px] uppercase font-bold px-2 py-0.5 rounded-full bg-orange-100 text-orange-800">
                     {ann.scope}
                   </span>
                   <h5 className="text-xs font-bold text-slate-900">{ann.title}</h5>
-                  <p className="text-[11px] text-slate-500 line-clamp-2 leading-relaxed">{ann.content}</p>
+                  <p className="text-[11px] text-slate-600 line-clamp-2 leading-relaxed">{ann.content}</p>
                 </div>
               ))}
             </div>
           </div>
 
           {/* Assigned Faculty Mentor Card */}
-          <div className="bg-white rounded-3xl border border-slate-200/80 p-5 shadow-sm space-y-3">
+          <div className="bg-gradient-to-br from-white to-indigo-50/40 rounded-3xl border-2 border-indigo-200/90 border-t-4 border-t-indigo-500 p-5 shadow-xs space-y-3">
             <div className="flex items-center justify-between pb-2 border-b border-slate-100">
-              <div className="flex items-center gap-1.5 text-xs font-extrabold text-slate-900">
-                <UserCheck size={16} className="text-amber-600" />
+              <div className="flex items-center gap-1.5 text-xs font-extrabold text-indigo-950">
+                <span className="w-6 h-6 rounded-lg bg-indigo-100 text-indigo-700 flex items-center justify-center">
+                  <UserCheck size={14} />
+                </span>
                 <span>Assigned Faculty Mentor</span>
               </div>
-              <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-50 text-amber-700 border border-amber-200">
+              <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-indigo-100 text-indigo-800 border border-indigo-200">
                 Active 1-on-1
               </span>
             </div>
