@@ -33,7 +33,8 @@ export const uploadMaterial = async (req, res) => {
     });
 
     const populated = await Material.findById(material._id)
-      .populate('subject teacher', 'name code email');
+      .populate('subject', 'name code')
+      .populate('teacher', 'name email role avatar department');
 
     broadcastEvent('materials_updated', populated);
     broadcastEvent('dashboard_refresh', {});
@@ -59,7 +60,8 @@ export const getMaterials = async (req, res) => {
     if (req.query.unit) filter.unit = Number(req.query.unit);
 
     const materials = await Material.find(filter)
-      .populate('subject teacher', 'name code email')
+      .populate('subject', 'name code')
+      .populate('teacher', 'name email role avatar department')
       .sort({ unit: 1, createdAt: -1 })
       .lean();
 
@@ -102,7 +104,9 @@ export const updateMaterial = async (req, res) => {
     }
 
     await material.save();
-    const populated = await Material.findById(material._id).populate('subject teacher', 'name code email');
+    const populated = await Material.findById(material._id)
+      .populate('subject', 'name code')
+      .populate('teacher', 'name email role avatar department');
 
     broadcastEvent('materials_updated', populated);
     broadcastEvent('dashboard_refresh', {});
