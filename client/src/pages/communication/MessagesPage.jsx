@@ -571,7 +571,7 @@ export default function MessagesPage() {
   return (
     <div className="flex-1 min-h-0 h-full flex flex-col space-y-2 overflow-hidden">
       {/* 1. Compact Header Bar (Hidden on mobile when chat conversation is active to maximize screen) */}
-      <div className={`${selectedContact ? 'hidden md:flex' : 'flex'} bg-gradient-to-r from-blue-700 via-indigo-700 to-brand-700 rounded-2xl px-3 sm:px-4 py-2 sm:py-2.5 text-white shadow-md shadow-indigo-500/10 items-center justify-between gap-3 shrink-0`}>
+      <div className={`${selectedContact ? 'hidden sm:flex' : 'flex'} bg-gradient-to-r from-blue-700 via-indigo-700 to-brand-700 rounded-2xl px-3 sm:px-4 py-2 sm:py-2.5 text-white shadow-md shadow-indigo-500/10 items-center justify-between gap-3 shrink-0`}>
         <div className="flex items-center gap-2.5 min-w-0">
           <div className="w-8 h-8 rounded-xl bg-white/15 backdrop-blur-sm flex items-center justify-center shrink-0">
             <MessageSquare size={16} className="text-white" />
@@ -611,10 +611,10 @@ export default function MessagesPage() {
         {/* Left: Scrollable Contacts List Panel (Full-width on mobile when no contact selected, side-by-side on desktop) */}
         <div
           className={`${
-            selectedContact ? 'hidden md:flex' : 'flex'
+            selectedContact ? 'hidden sm:flex' : 'flex'
           } ${
-            desktopContactsOpen ? 'md:flex' : 'md:hidden'
-          } w-full md:w-80 lg:w-96 shrink-0 border-r border-slate-200/80 flex-col bg-slate-50/50 h-full min-h-0 overflow-hidden transition-all duration-150`}
+            desktopContactsOpen ? 'sm:flex' : 'sm:hidden'
+          } w-full sm:w-72 md:w-80 lg:w-96 shrink-0 border-r border-slate-200/80 flex-col bg-slate-50/50 h-full min-h-0 overflow-hidden transition-all duration-150`}
         >
           {/* Top Search Bar & Multi-Factor Filters (Shrink-0) */}
           <div className="p-3 border-b border-slate-200/80 space-y-2 shrink-0 bg-white">
@@ -977,7 +977,7 @@ export default function MessagesPage() {
         {/* Right: Fixed Chat Panel (Full-width on mobile when active) */}
         <div
           className={`${
-            selectedContact ? 'flex' : 'hidden md:flex'
+            selectedContact ? 'flex' : 'hidden sm:flex'
           } flex-1 min-w-0 flex-col h-full bg-white overflow-hidden relative`}
         >
           {selectedContact ? (
@@ -989,7 +989,7 @@ export default function MessagesPage() {
                   <button
                     type="button"
                     onClick={() => setSelectedContact(null)}
-                    className="md:hidden inline-flex items-center gap-1 p-1.5 -ml-1 text-slate-600 hover:text-brand-600 hover:bg-brand-50 rounded-xl transition cursor-pointer shrink-0"
+                    className="sm:hidden inline-flex items-center gap-1 p-1.5 -ml-1 text-slate-600 hover:text-brand-600 hover:bg-brand-50 rounded-xl transition cursor-pointer shrink-0"
                     title="Back to Contact List"
                   >
                     <ChevronLeft size={20} className="shrink-0 text-brand-600" />
@@ -1000,7 +1000,7 @@ export default function MessagesPage() {
                   <button
                     type="button"
                     onClick={() => setDesktopContactsOpen((prev) => !prev)}
-                    className="hidden md:inline-flex items-center gap-1.5 px-2.5 py-1 rounded-xl border border-slate-200 hover:bg-slate-50 text-slate-700 text-xs font-bold transition cursor-pointer shrink-0 shadow-2xs"
+                    className="hidden sm:inline-flex items-center gap-1.5 px-2.5 py-1 rounded-xl border border-slate-200 hover:bg-slate-50 text-slate-700 text-xs font-bold transition cursor-pointer shrink-0 shadow-2xs"
                     title={desktopContactsOpen ? 'Collapse Contacts Panel' : 'Expand Contacts Panel'}
                   >
                     <Users size={14} className={desktopContactsOpen ? 'text-brand-600' : 'text-slate-400'} />

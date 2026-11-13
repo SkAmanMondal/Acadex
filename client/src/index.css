@@ -42,6 +42,21 @@
   -webkit-tap-highlight-color: transparent;
 }
 
+/* ==========================================================================
+   Cross-Browser & AdBlocker Immunity for Acadex Primary Navigation
+   Guarantees the sidebar is NEVER hidden by cosmetic filters, EasyList
+   rules, or Chrome AdBlocker extensions targeting <aside> / #sidebar.
+   ========================================================================== */
+#acadex-desktop-nav {
+  display: flex !important;
+}
+
+@media (max-width: 639px) {
+  #acadex-desktop-nav {
+    display: none !important;
+  }
+}
+
 /* Universal SVG baseline protection across all rendering engines */
 svg {
   flex-shrink: 0 !important;

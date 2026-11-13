@@ -171,9 +171,9 @@ export default function DashboardLayout() {
   return (
     <div className="h-screen h-[100dvh] bg-slate-50/70 flex flex-col font-sans overflow-hidden">
       {/* ====================================================================== */}
-      {/* 1. MOBILE TOP APP BAR - Clean header for phones/tablets (< md)        */}
+      {/* 1. MOBILE TOP APP BAR - Clean header for phones (< sm)                 */}
       {/* ====================================================================== */}
-      <header className="flex md:hidden h-14 bg-white border-b border-slate-200/80 px-3 items-center justify-between shrink-0 z-30 sticky top-0 shadow-2xs select-none">
+      <header className="flex sm:hidden h-14 bg-white border-b border-slate-200/80 px-3 items-center justify-between shrink-0 z-30 sticky top-0 shadow-2xs select-none">
         <div className="flex items-center gap-2.5 min-w-0">
           <button
             type="button"
@@ -213,13 +213,17 @@ export default function DashboardLayout() {
       </header>
 
       {/* ====================================================================== */}
-      {/* 2. DESKTOP PERMANENT SIDEBAR (md:flex)                                 */}
+      {/* 2. DESKTOP PERMANENT SIDEBAR (sm:flex)                                 */}
       {/* Hidden on mobile phones to prevent layout squeezing / obstruction.      */}
       {/* Smoothly toggles between Full Expanded (w-64) and Mini-Rail (w-16).    */}
       {/* ====================================================================== */}
       {desktopSidebarOpen ? (
         /* Full Expanded Sidebar (w-64 lg:w-72) */
-        <aside className="hidden md:flex flex-col w-64 lg:w-72 fixed inset-y-0 left-0 z-40 bg-white border-r border-slate-200/80 shadow-xs h-screen overflow-hidden select-none">
+        <nav
+          id="acadex-desktop-nav"
+          aria-label="Acadex Primary Navigation"
+          className="hidden sm:flex flex-col w-64 lg:w-72 fixed inset-y-0 left-0 z-40 bg-white border-r border-slate-200/80 shadow-xs h-screen overflow-hidden select-none"
+        >
           {/* Brand Header & Live Notification Center */}
           <div className="h-16 px-4 border-b border-slate-100 flex items-center justify-between shrink-0 bg-white">
             <Link to="/" className="flex items-center gap-2.5 group cursor-pointer min-w-0">
@@ -391,10 +395,14 @@ export default function DashboardLayout() {
               <span>Sign Out</span>
             </button>
           </div>
-        </aside>
+        </nav>
       ) : (
-        /* Collapsed Mini-Rail (w-16) - Navigation icons always visible on desktop (md:flex) */
-        <aside className="hidden md:flex flex-col w-16 fixed inset-y-0 left-0 z-40 bg-white border-r border-slate-200/80 shadow-xs h-screen overflow-hidden select-none items-center py-3 justify-between">
+        /* Collapsed Mini-Rail (w-16) - Navigation icons always visible on desktop (sm:flex) */
+        <nav
+          id="acadex-desktop-nav"
+          aria-label="Acadex Primary Navigation"
+          className="hidden sm:flex flex-col w-16 fixed inset-y-0 left-0 z-40 bg-white border-r border-slate-200/80 shadow-xs h-screen overflow-hidden select-none items-center py-3 justify-between"
+        >
           {/* Top Logo & Expand Button */}
           <div className="flex flex-col items-center gap-3 w-full shrink-0">
             <Link to="/" className="w-10 h-10 rounded-2xl bg-gradient-to-tr from-brand-700 via-brand-600 to-indigo-500 text-white flex items-center justify-center shadow-md shadow-brand-500/25 shrink-0" title="Acadex Home">
@@ -445,7 +453,7 @@ export default function DashboardLayout() {
               <LogOut size={16} strokeWidth={2.2} />
             </button>
           </div>
-        </aside>
+        </nav>
       )}
 
       {/* ====================================================================== */}
@@ -571,14 +579,14 @@ export default function DashboardLayout() {
 
       {/* ====================================================================== */}
       {/* 4. MAIN CONTENT AREA                                                   */}
-      {/* Dynamic desktop padding (pl-0 on mobile, md:pl-64 or md:pl-16 desktop) */}
+      {/* Dynamic desktop padding (pl-0 on mobile, sm:pl-64 or sm:pl-16 desktop) */}
       {/* Bottom padding on mobile to accommodate native bottom app navigation   */}
       {/* ====================================================================== */}
       <div
         className={`flex-1 pl-0 ${
-          desktopSidebarOpen ? 'md:pl-64 lg:md:pl-72' : 'md:pl-16'
+          desktopSidebarOpen ? 'sm:pl-64 lg:pl-72' : 'sm:pl-16'
         } min-h-0 ${
-          location.pathname === '/messages' ? 'overflow-hidden h-full flex flex-col pb-0' : 'overflow-y-auto pb-20 md:pb-0'
+          location.pathname === '/messages' ? 'overflow-hidden h-full flex flex-col pb-0' : 'overflow-y-auto pb-20 sm:pb-0'
         } flex flex-col min-w-0 transition-all duration-200`}
       >
         <main
@@ -593,11 +601,11 @@ export default function DashboardLayout() {
       </div>
 
       {/* ====================================================================== */}
-      {/* 5. NATIVE MOBILE BOTTOM NAVIGATION BAR (< md)                         */}
+      {/* 5. NATIVE MOBILE BOTTOM NAVIGATION BAR (< sm)                         */}
       {/* Fast, thumb-friendly access to core workflows with active state badges */}
       {/* ====================================================================== */}
       {location.pathname !== '/messages' && (
-        <nav className="flex md:hidden fixed bottom-0 inset-x-0 z-30 bg-white/95 backdrop-blur-lg border-t border-slate-200/90 px-2 py-1 items-center justify-around shadow-lg shadow-slate-900/10 select-none">
+        <nav className="flex sm:hidden fixed bottom-0 inset-x-0 z-30 bg-white/95 backdrop-blur-lg border-t border-slate-200/90 px-2 py-1 items-center justify-around shadow-lg shadow-slate-900/10 select-none">
           <Link
             to="/"
             className={`flex flex-col items-center justify-center py-1 px-2.5 rounded-xl transition ${

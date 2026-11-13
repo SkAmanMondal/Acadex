@@ -23,7 +23,7 @@ export default function FloatingChatButton() {
   };
 
   return (
-    <div className="fixed bottom-20 md:bottom-[calc(1.5rem+env(safe-area-inset-bottom,0px))] right-4 md:right-[calc(1.5rem+env(safe-area-inset-right,0px))] z-40 flex flex-col items-end">
+    <div className="fixed bottom-20 sm:bottom-[calc(1.5rem+env(safe-area-inset-bottom,0px))] right-4 sm:right-[calc(1.5rem+env(safe-area-inset-right,0px))] z-40 flex flex-col items-end">
       {/* Mini Quick Preview Toast / Popover */}
       {showPopup && (
         <div className="mb-3 w-80 bg-white rounded-3xl shadow-2xl border border-slate-200/90 p-4 animate-in fade-in slide-in-from-bottom-3 duration-200">
