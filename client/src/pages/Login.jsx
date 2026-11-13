@@ -48,6 +48,7 @@ export default function Login() {
   const [selectedDept, setSelectedDept] = useState('all');
   const [selectedBatch, setSelectedBatch] = useState('all');
   const [visibleCount, setVisibleCount] = useState(40);
+  const [mobileTab, setMobileTab] = useState('directory'); // 'directory' or 'form'
 
   const { login } = useAuth();
   const navigate = useNavigate();
@@ -244,7 +245,35 @@ export default function Login() {
   };
 
   return (
-    <div className="min-h-screen lg:h-screen bg-slate-950 flex flex-col items-center justify-center p-2 sm:p-4 lg:p-6 bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-blue-900/30 via-slate-950 to-slate-950 overflow-y-auto lg:overflow-hidden py-4 sm:py-6">
+    <div className="min-h-screen lg:h-screen bg-slate-950 flex flex-col items-center justify-center p-2 sm:p-4 lg:p-6 bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-blue-900/30 via-slate-950 to-slate-950 overflow-y-auto lg:overflow-hidden py-3 sm:py-6">
+      {/* Mobile Screen Segmented Tab Switcher */}
+      <div className="lg:hidden flex items-center p-1 bg-slate-900/90 rounded-2xl border border-slate-800 mb-2.5 w-full max-w-sm mx-auto shrink-0 shadow-lg">
+        <button
+          type="button"
+          onClick={() => setMobileTab('directory')}
+          className={`flex-1 py-2 text-xs font-bold rounded-xl transition cursor-pointer flex items-center justify-center gap-1.5 ${
+            mobileTab === 'directory'
+              ? 'bg-gradient-to-r from-brand-600 to-indigo-600 text-white shadow-sm'
+              : 'text-slate-400 hover:text-white'
+          }`}
+        >
+          <Users size={14} />
+          <span>Accounts ({filteredAccounts.length})</span>
+        </button>
+        <button
+          type="button"
+          onClick={() => setMobileTab('form')}
+          className={`flex-1 py-2 text-xs font-bold rounded-xl transition cursor-pointer flex items-center justify-center gap-1.5 ${
+            mobileTab === 'form'
+              ? 'bg-gradient-to-r from-brand-600 to-indigo-600 text-white shadow-sm'
+              : 'text-slate-400 hover:text-white'
+          }`}
+        >
+          <Lock size={14} />
+          <span>Sign In Form</span>
+        </button>
+      </div>
+
       {/* Main Container Card: Natural scroll on mobile, pinned viewport height on desktop */}
       <div className="w-full max-w-7xl min-h-0 lg:h-full lg:max-h-[96vh] bg-white rounded-3xl shadow-2xl overflow-hidden border border-slate-200/90 grid grid-cols-1 lg:grid-cols-12 my-auto">
 
@@ -252,7 +281,7 @@ export default function Login() {
         {/* LEFT COLUMN: FIXED LOGIN AREA                                          */}
         {/* Strictly pinned and stationary; does not scroll when browsing data     */}
         {/* ====================================================================== */}
-        <div className="lg:col-span-5 p-5 sm:p-6 lg:p-8 flex flex-col justify-between border-b lg:border-b-0 lg:border-r border-slate-100 bg-white h-auto lg:h-full overflow-y-auto select-none shrink-0">
+        <div className={`lg:col-span-5 p-5 sm:p-6 lg:p-8 flex-col justify-between border-b lg:border-b-0 lg:border-r border-slate-100 bg-white h-auto lg:h-full overflow-y-auto select-none shrink-0 ${mobileTab === 'form' ? 'flex' : 'hidden lg:flex'}`}>
           <div>
             {/* Brand Header */}
             <div className="flex items-center gap-3 mb-5">
@@ -276,6 +305,16 @@ export default function Login() {
                 Enter your credentials or click <strong>Quick Login</strong> on any persona on the right.
               </p>
             </div>
+
+            {/* Mobile quick jump to accounts */}
+            <button
+              type="button"
+              onClick={() => setMobileTab('directory')}
+              className="lg:hidden w-full py-2 px-3 mb-4 rounded-xl bg-brand-50 hover:bg-brand-100 border border-brand-200 text-brand-700 text-xs font-bold flex items-center justify-center gap-1.5 cursor-pointer shadow-xs"
+            >
+              <Users size={13} />
+              <span>Browse 547 Accounts & 1-Click Login →</span>
+            </button>
 
             {/* Selected Persona Floating Indicator */}
             {selectedPersonaNote && (
@@ -411,7 +450,7 @@ export default function Login() {
         {/* RIGHT COLUMN: DATA PART (SEARCH, FILTERS & SCROLLABLE DIRECTORY)        */}
         {/* Fixed header toolbar at top; ONLY data list scrolls independently     */}
         {/* ====================================================================== */}
-        <div className="lg:col-span-7 flex flex-col h-full bg-slate-50/80 overflow-hidden min-w-0">
+        <div className={`lg:col-span-7 flex-col h-[82vh] sm:h-[86vh] lg:h-full bg-slate-50/80 overflow-hidden min-w-0 ${mobileTab === 'directory' ? 'flex' : 'hidden lg:flex'}`}>
 
           {/* Fixed Filter & Search Toolbar (Pinned at Top of Data Area) */}
           <div className="p-4 lg:p-5 border-b border-slate-200/80 bg-white shrink-0 space-y-3 z-10 shadow-2xs">
@@ -525,7 +564,7 @@ export default function Login() {
           {/* ====================================================================== */}
           {/* SCROLLABLE DATA LIST (ONLY THIS CONTAINER SCROLLS ON SCREEN)           */}
           {/* ====================================================================== */}
-          <div className="flex-1 overflow-y-auto p-4 lg:p-5 space-y-3 min-h-0 overscroll-contain">
+          <div className="flex-1 overflow-y-auto p-3 sm:p-4 lg:p-5 space-y-3 min-h-0 touch-pan-y overscroll-y-contain">
             {directoryLoading ? (
               <div className="py-20 text-center space-y-3">
                 <div className="w-8 h-8 border-3 border-brand-600 border-t-transparent rounded-full animate-spin mx-auto" />

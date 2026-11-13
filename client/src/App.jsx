@@ -26,13 +26,15 @@ import StudentCurriculumPage from './pages/curriculum/StudentCurriculumPage';
 import AdminAcademicsPage from './pages/admin/AdminAcademicsPage';
 import AdminTeachersPage from './pages/admin/AdminTeachersPage';
 import AdminStudentsPage from './pages/admin/AdminStudentsPage';
+import ErrorBoundary from './components/ErrorBoundary';
 
 export default function App() {
   return (
-    <AuthProvider>
-      <SocketProvider>
-        <BrowserRouter>
-        <Routes>
+    <ErrorBoundary>
+      <AuthProvider>
+        <SocketProvider>
+          <BrowserRouter>
+          <Routes>
           {/* Public Kiosk for Classroom Podium PC (No login required) */}
           <Route path="/kiosk" element={<ClassroomKioskScanner />} />
           <Route path="/login" element={<Login />} />
@@ -158,5 +160,6 @@ export default function App() {
       </BrowserRouter>
     </SocketProvider>
   </AuthProvider>
+</ErrorBoundary>
   );
 }

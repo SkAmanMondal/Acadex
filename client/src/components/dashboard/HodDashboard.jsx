@@ -7,6 +7,7 @@ import LiveSessionBanner from '../attendance/LiveSessionBanner';
 import {
   Building,
   Users,
+  GraduationCap,
   Calendar,
   AlertTriangle,
   QrCode,
