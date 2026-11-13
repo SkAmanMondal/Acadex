@@ -230,7 +230,7 @@ export default function StudentDashboard({ user }) {
             <div className="flex flex-wrap sm:flex-nowrap items-center gap-2.5 shrink-0">
               <Link
                 to={profile.mentor?._id ? `/messages?contactId=${profile.mentor._id}` : '/messages'}
-                state={{ contactId: profile.mentor?._id }}
+                state={{ contactId: profile.mentor?._id, contact: profile.mentor }}
                 className={`px-4 py-2.5 rounded-2xl text-xs font-bold transition flex items-center gap-1.5 shadow-sm cursor-pointer whitespace-nowrap ${
                   attendance.isCritical || attendance.percentage < 60
                     ? 'bg-rose-700 hover:bg-rose-800 text-white'
@@ -328,7 +328,7 @@ export default function StudentDashboard({ user }) {
 
           <Link
             to={profile.mentor?._id ? `/messages?contactId=${profile.mentor._id}` : '/messages'}
-            state={{ contactId: profile.mentor?._id }}
+            state={{ contactId: profile.mentor?._id, contact: profile.mentor }}
             className="mt-3 inline-flex items-center gap-1.5 text-xs font-bold text-indigo-600 hover:text-indigo-800 transition cursor-pointer"
           >
             <MessageSquare size={13} />
@@ -631,8 +631,9 @@ export default function StudentDashboard({ user }) {
                 <span>Mentorship Portal</span>
               </Link>
               <Link
-                to="/messages"
-                className="py-1.5 px-2 bg-slate-900 hover:bg-slate-800 text-white text-[11px] font-bold rounded-xl transition text-center flex items-center justify-center gap-1"
+                to={profile.mentor?._id ? `/messages?contactId=${profile.mentor._id}` : '/messages'}
+                state={{ contactId: profile.mentor?._id, contact: profile.mentor }}
+                className="py-1.5 px-2 bg-slate-900 hover:bg-slate-800 text-white text-[11px] font-bold rounded-xl transition text-center flex items-center justify-center gap-1 cursor-pointer"
               >
                 <Send size={12} />
                 <span>Direct Chat</span>

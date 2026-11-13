@@ -298,7 +298,12 @@ export default function MentorshipPage() {
           </div>
           <div className="flex items-center gap-2 self-start sm:self-auto">
             <button
-              onClick={() => navigate(studentMentor?._id ? `/messages?contactId=${studentMentor._id}` : '/messages', { state: { contactId: studentMentor?._id } })}
+              onClick={() =>
+                navigate(
+                  studentMentor?._id ? `/messages?contactId=${studentMentor._id}` : '/messages',
+                  { state: { contactId: studentMentor?._id, contact: studentMentor } }
+                )
+              }
               className="px-3.5 py-1.5 bg-brand-50 hover:bg-brand-100 text-brand-700 text-xs font-semibold rounded-xl border border-brand-200 flex items-center gap-1.5 transition cursor-pointer"
             >
               <MessageSquare size={14} />
@@ -461,7 +466,13 @@ export default function MentorshipPage() {
                             <span>Log Advisory</span>
                           </button>
                           <button
-                            onClick={() => navigate('/messages')}
+                            onClick={() => {
+                              const targetUser = mentee.user;
+                              navigate(
+                                targetUser?._id ? `/messages?contactId=${targetUser._id}` : '/messages',
+                                { state: { contactId: targetUser?._id, contact: targetUser } }
+                              );
+                            }}
                             className="p-1.5 text-slate-400 hover:text-brand-600 hover:bg-slate-100 rounded-lg transition cursor-pointer"
                             title="Message Mentee"
                           >

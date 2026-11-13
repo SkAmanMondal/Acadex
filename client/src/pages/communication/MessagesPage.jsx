@@ -64,8 +64,11 @@ export default function MessagesPage() {
   const [inChatSearch, setInChatSearch] = useState('');
 
   const location = useLocation();
-  const [searchParams] = useSearchParams();
+  const [searchParams, setSearchParams] = useSearchParams();
   const targetContactId = location.state?.contactId || searchParams.get('contactId');
+
+  const appliedTargetRef = useRef(null);
+  const activeConversationIdRef = useRef(null);
 
   const chatFeedRef = useRef(null);
   const messagesEndRef = useRef(null);
@@ -142,7 +145,9 @@ export default function MessagesPage() {
   const loadContacts = async () => {
     try {
       setLoadingContacts(true);
-      const res = await api.get('/communication/contacts');
+      const res = await api.get('/communication/contacts', {
+        params: targetContactId ? { includeContactId: targetContactId } : {},
+      });
       if (res.data?.success && res.data.data.length > 0) {
         let rawContacts = res.data.data;
 
@@ -168,14 +173,26 @@ export default function MessagesPage() {
         // Pre-selection priority:
         // ONLY pre-select if contact was explicitly requested via URL param or navigation state (e.g. clicking "Message Mentor")
         let initialContact = null;
-        if (targetContactId) {
+        if (targetContactId && appliedTargetRef.current !== String(targetContactId)) {
           initialContact = sorted.find((c) => String(c._id) === String(targetContactId));
+          if (!initialContact && location.state?.contact && String(location.state.contact._id) === String(targetContactId)) {
+            initialContact = location.state.contact;
+            sorted.unshift(initialContact);
+            setContacts(sorted);
+          }
         }
 
         if (initialContact) {
+          appliedTargetRef.current = String(targetContactId);
           setSelectedContact(initialContact);
           setMobileChatOpen(true);
-        } else {
+          if (searchParams.get('contactId')) {
+            setSearchParams({}, { replace: true });
+          }
+          if (location.state?.contactId) {
+            window.history.replaceState({}, document.title);
+          }
+        } else if (!selectedContact) {
           // Do NOT automatically open any chat on initial page load
           setSelectedContact(null);
           setMobileChatOpen(false);
@@ -192,10 +209,11 @@ export default function MessagesPage() {
   const loadConversation = async (contactId) => {
     if (!contactId) return;
     const contactIdStr = String(contactId);
+    activeConversationIdRef.current = contactIdStr;
     try {
       setLoadingMessages(true);
       const res = await api.get(`/communication/messages/${contactIdStr}`);
-      if (res.data?.success) {
+      if (activeConversationIdRef.current === contactIdStr && res.data?.success) {
         setMessages(res.data.data);
         setTimeout(() => scrollToBottom(false), 50);
         markConversationRead(contactIdStr);
@@ -206,9 +224,13 @@ export default function MessagesPage() {
         );
       }
     } catch (err) {
-      console.error('Failed to load conversation:', err);
+      if (activeConversationIdRef.current === contactIdStr) {
+        console.error('Failed to load conversation:', err);
+      }
     } finally {
-      setLoadingMessages(false);
+      if (activeConversationIdRef.current === contactIdStr) {
+        setLoadingMessages(false);
+      }
     }
   };
 
@@ -226,21 +248,39 @@ export default function MessagesPage() {
     };
   }, [selectedContact?._id, enterChat, leaveChat]);
 
+  // Handle explicit deep-link navigation to targetContactId while component is already mounted
   useEffect(() => {
-    if (targetContactId && contacts.length > 0) {
-      const match = contacts.find((c) => String(c._id) === String(targetContactId));
-      if (match && String(selectedContact?._id) !== String(match._id)) {
+    if (!targetContactId) return;
+    if (String(targetContactId) === String(appliedTargetRef.current)) return;
+
+    if (contacts.length > 0) {
+      let match = contacts.find((c) => String(c._id) === String(targetContactId));
+      if (!match && location.state?.contact && String(location.state.contact._id) === String(targetContactId)) {
+        match = location.state.contact;
+        setContacts((prev) => [match, ...prev.filter((c) => String(c._id) !== String(targetContactId))]);
+      }
+
+      if (match) {
+        appliedTargetRef.current = String(targetContactId);
         setSelectedContact(match);
         setMobileChatOpen(true);
+        if (searchParams.get('contactId')) {
+          setSearchParams({}, { replace: true });
+        }
+        if (location.state?.contactId) {
+          window.history.replaceState({}, document.title);
+        }
       }
     }
-  }, [targetContactId, contacts]);
+  }, [targetContactId, contacts, searchParams, setSearchParams, location.state]);
 
   useEffect(() => {
-    if (selectedContact) {
+    if (selectedContact?._id) {
       loadConversation(selectedContact._id);
       setShowInChatSearch(false);
       setInChatSearch('');
+    } else {
+      setMessages([]);
     }
   }, [selectedContact?._id]);
 
@@ -369,27 +409,31 @@ export default function MessagesPage() {
     stopTyping(selectedContact._id);
 
     const messageContent = inputText.trim();
+    const recipientContactId = String(selectedContact._id);
     setInputText('');
 
     try {
       setSending(true);
       const res = await api.post('/communication/messages', {
-        recipientId: selectedContact._id,
+        recipientId: recipientContactId,
         content: messageContent,
       });
 
       if (res.data?.success) {
         const sentMsg = res.data.data;
-        setMessages((prev) => {
-          if (prev.some((m) => String(m._id) === String(sentMsg._id))) return prev;
-          return [...prev, sentMsg];
-        });
+        if (activeConversationIdRef.current === recipientContactId) {
+          setMessages((prev) => {
+            if (prev.some((m) => String(m._id) === String(sentMsg._id))) return prev;
+            return [...prev, sentMsg];
+          });
+          setTimeout(() => scrollToBottom(true), 50);
+        }
 
         // Update lastMessage on contact in contacts list
         const isRead = Boolean(sentMsg.read);
         setContacts((prev) => {
           const updated = prev.map((c) => {
-            if (String(c._id) === String(selectedContact._id)) {
+            if (String(c._id) === recipientContactId) {
               return {
                 ...c,
                 lastMessage: {
@@ -405,8 +449,6 @@ export default function MessagesPage() {
           });
           return sortContacts(updated);
         });
-
-        setTimeout(() => scrollToBottom(true), 50);
       }
     } catch (err) {
       alert(err.response?.data?.message || 'Failed to deliver message');
@@ -497,6 +539,7 @@ export default function MessagesPage() {
   const handleSelectContact = (contact) => {
     if (!contact) return;
     const cIdStr = String(contact._id);
+    appliedTargetRef.current = cIdStr;
     setSelectedContact(contact);
     setMobileChatOpen(true);
     setShowInChatSearch(false);
@@ -509,7 +552,6 @@ export default function MessagesPage() {
 
     markConversationRead(cIdStr);
     api.patch(`/communication/messages/${cIdStr}/read`).catch(() => {});
-    loadConversation(cIdStr);
   };
 
   // Filtered contacts based on search query and active filter
@@ -1185,6 +1227,14 @@ export default function MessagesPage() {
                     >
                       Clear search
                     </button>
+                  </div>
+                )}
+
+                {/* Messages Loading Spinner */}
+                {loadingMessages && messages.length === 0 && (
+                  <div className="h-full flex flex-col items-center justify-center text-center text-slate-400 space-y-2 p-6">
+                    <div className="w-8 h-8 rounded-full border-2 border-brand-500 border-t-transparent animate-spin" />
+                    <p className="text-xs font-semibold text-slate-500">Loading conversation...</p>
                   </div>
                 )}
 

@@ -670,7 +670,7 @@ export const getContacts = async (req, res) => {
           role: 'student',
           department: teacherDeptId,
           isActive: true,
-        }).select('name email role department').sort({ name: 1 }).limit(40).lean();
+        }).select('name email role department').sort({ name: 1 }).lean();
 
         deptStudents.forEach((st) => {
           const uId = st._id.toString();
@@ -689,7 +689,8 @@ export const getContacts = async (req, res) => {
       }
 
       // 5. Faculty Colleagues, HODs, and College Administrators
-      const [facultyMembers, admins] = await Promise.all([
+      const [tpMentors, facultyMembers, admins] = await Promise.all([
+        TeacherProfile.find({ isMentor: true }).select('user').lean(),
         User.find({
           role: { $in: ['teacher', 'hod'] },
           _id: { $ne: req.user._id },
@@ -702,17 +703,21 @@ export const getContacts = async (req, res) => {
         }).select('name email role').lean(),
       ]);
 
+      const mentorSet = new Set(tpMentors.map((tp) => tp.user.toString()));
+
       facultyMembers.forEach((f) => {
         const uId = f._id.toString();
         if (!contactUserIds.has(uId)) {
           contactUserIds.add(uId);
+          const isMentor = mentorSet.has(uId);
           contactsList.push({
             _id: f._id,
             name: f.name,
             email: f.email,
             role: f.role,
             isHod: f.role === 'hod',
-            relationship: f.role === 'hod' ? 'Head of Department (HOD)' : 'Faculty Colleague',
+            isMentor,
+            relationship: f.role === 'hod' ? 'Head of Department (HOD)' : isMentor ? '⭐ Faculty Mentor' : 'Faculty Colleague',
             department: f.department,
           });
         }
@@ -734,27 +739,70 @@ export const getContacts = async (req, res) => {
 
       contacts = contactsList;
     } else {
-      // College Admin can message everyone (include anyone with chat history plus faculty and students)
-      const [incomingSenders, outgoingRecipients] = await Promise.all([
-        Message.distinct('sender', { recipient: req.user._id }),
-        Message.distinct('recipient', { sender: req.user._id }),
+      // College Admin can message everyone: ALL faculty, HODs, mentors, staff, and students (NO 60-USER LIMIT)
+      const [teacherProfiles, users] = await Promise.all([
+        TeacherProfile.find({}).select('user isMentor designation').lean(),
+        User.find({
+          _id: { $ne: req.user._id },
+          isActive: true,
+        })
+          .select('name email role department')
+          .populate('department', 'name code')
+          .sort({ role: 1, name: 1 })
+          .lean(),
       ]);
-      const chatPartnerIds = [...new Set([...incomingSenders, ...outgoingRecipients].map((id) => id.toString()))];
 
-      const users = await User.find({
-        $or: [
-          { _id: { $in: chatPartnerIds } },
-          { _id: { $ne: req.user._id } },
-        ],
-        isActive: true,
-      })
-        .select('name email role department')
-        .limit(60);
+      const mentorUserSet = new Set(
+        teacherProfiles.filter((tp) => tp.isMentor).map((tp) => tp.user.toString())
+      );
 
-      contacts = users.map((u) => ({
-        ...u.toObject(),
-        relationship: u.role.toUpperCase(),
-      }));
+      contacts = users.map((u) => {
+        const uId = u._id.toString();
+        const isMentor = mentorUserSet.has(uId);
+        let relationship = 'College Member';
+        if (u.role === 'hod') relationship = 'Head of Department (HOD)';
+        else if (isMentor) relationship = '⭐ Faculty Mentor';
+        else if (u.role === 'teacher') relationship = 'Faculty Member';
+        else if (u.role === 'student') relationship = 'Student';
+        else if (u.role === 'college_admin') relationship = 'College Administrator';
+        else if (u.role === 'super_admin') relationship = 'Super Administrator';
+
+        return {
+          ...u,
+          isMentor,
+          isHod: u.role === 'hod',
+          relationship,
+        };
+      });
+    }
+
+    // If client requested a specific contact to be included (e.g. from deep-link, mentor card, or dashboard)
+    if (req.query.includeContactId) {
+      const explicitId = req.query.includeContactId.toString();
+      if (!contacts.some((c) => c._id.toString() === explicitId)) {
+        const explicitUser = await User.findById(explicitId)
+          .select('name email role department')
+          .populate('department', 'name code')
+          .lean();
+        if (explicitUser) {
+          const isTpMentor = await TeacherProfile.exists({ user: explicitId, isMentor: true });
+          contacts.unshift({
+            ...explicitUser,
+            isMentor: Boolean(isTpMentor),
+            isHod: explicitUser.role === 'hod',
+            relationship:
+              explicitUser.role === 'hod'
+                ? 'Head of Department (HOD)'
+                : isTpMentor
+                ? '⭐ Faculty Mentor'
+                : explicitUser.role === 'teacher'
+                ? 'Faculty Member'
+                : explicitUser.role === 'student'
+                ? 'Student'
+                : 'College Staff',
+          });
+        }
+      }
     }
 
     // Enrich contacts with unread counts, latest message snippet/timestamp, and pin status
