@@ -33,25 +33,28 @@ import {
   Minimize2,
   Calendar,
   Sparkles,
+  Loader2,
 } from 'lucide-react';
 
 /* ==========================================================================
    Helper Utilities for In-App Previews & File Metadata
    ========================================================================== */
 const getApiBaseUrl = () => {
-  return import.meta.env.VITE_API_URL
-    ? import.meta.env.VITE_API_URL.replace(/\/$/, '')
-    : 'http://localhost:5000/api';
+  if (import.meta.env.VITE_API_URL) {
+    const trimmed = import.meta.env.VITE_API_URL.replace(/\/$/, '');
+    return trimmed.endsWith('/api') ? trimmed : `${trimmed}/api`;
+  }
+  return '/api';
 };
 
 const getMaterialViewUrl = (materialId) => {
-  const token = localStorage.getItem('token') || localStorage.getItem('acadex_token') || '';
+  const token = localStorage.getItem('acadex_token') || localStorage.getItem('campus360_token') || localStorage.getItem('token') || '';
   const apiBase = getApiBaseUrl();
   return `${apiBase}/materials/${materialId}/view${token ? `?token=${encodeURIComponent(token)}` : ''}`;
 };
 
 const getMaterialDownloadUrl = (materialId) => {
-  const token = localStorage.getItem('token') || localStorage.getItem('acadex_token') || '';
+  const token = localStorage.getItem('acadex_token') || localStorage.getItem('campus360_token') || localStorage.getItem('token') || '';
   const apiBase = getApiBaseUrl();
   return `${apiBase}/materials/${materialId}/download${token ? `?token=${encodeURIComponent(token)}` : ''}`;
 };
@@ -60,6 +63,14 @@ const resolveFileUrl = (url) => {
   if (!url) return '';
   if (url.startsWith('http://') || url.startsWith('https://')) {
     return url;
+  }
+  if (url.startsWith('/uploads/') || url.startsWith('uploads/')) {
+    const cleanPath = url.startsWith('/') ? url : `/${url}`;
+    if (import.meta.env.VITE_API_URL) {
+      const serverOrigin = import.meta.env.VITE_API_URL.replace(/\/$/, '').replace(/\/api$/, '');
+      return `${serverOrigin}${cleanPath}`;
+    }
+    return cleanPath;
   }
   const apiBase = getApiBaseUrl();
   return `${apiBase}${url.startsWith('/') ? '' : '/'}${url}`;
@@ -205,12 +216,16 @@ function MaterialViewerModal({ material, onClose, onDownload }) {
     setTimeout(() => setCopied(false), 2000);
   };
 
+  const fullStreamViewUrl = typeof window !== 'undefined' && !streamViewUrl.startsWith('http')
+    ? `${window.location.origin}${streamViewUrl}`
+    : streamViewUrl;
+
   // Google Docs Viewer (Universal for PDFs, Word, PPT on web)
-  const googleViewerUrl = `https://docs.google.com/viewer?url=${encodeURIComponent(streamViewUrl)}&embedded=true`;
+  const googleViewerUrl = `https://docs.google.com/viewer?url=${encodeURIComponent(fullStreamViewUrl)}&embedded=true`;
   // Mozilla PDF.js universal viewer
-  const pdfJsViewerUrl = `https://mozilla.github.io/pdf.js/web/viewer.html?file=${encodeURIComponent(streamViewUrl)}`;
+  const pdfJsViewerUrl = `https://mozilla.github.io/pdf.js/web/viewer.html?file=${encodeURIComponent(fullStreamViewUrl)}`;
   // Office Online Viewer
-  const officeViewerUrl = `https://view.officeapps.live.com/op/embed.aspx?src=${encodeURIComponent(streamViewUrl)}`;
+  const officeViewerUrl = `https://view.officeapps.live.com/op/embed.aspx?src=${encodeURIComponent(fullStreamViewUrl)}`;
 
   const getIframeSrc = () => {
     if (fileCategory === 'pdf') {
@@ -277,15 +292,18 @@ function MaterialViewerModal({ material, onClose, onDownload }) {
 
           {/* Header Action Tools */}
           <div className="flex items-center gap-1.5 shrink-0">
-            <button
-              type="button"
+            <a
+              href={streamDownloadUrl}
+              download={material.fileName || 'study-material'}
+              target="_blank"
+              rel="noopener noreferrer"
               onClick={() => onDownload(material._id, material.fileName)}
               className="px-3.5 py-1.5 rounded-xl bg-brand-600 hover:bg-brand-700 text-white font-bold text-xs flex items-center gap-1.5 shadow-sm transition cursor-pointer"
               title="Download file directly to device"
             >
               <Download size={14} />
               <span className="hidden sm:inline">Download</span>
-            </button>
+            </a>
 
             <a
               href={streamViewUrl}
@@ -453,11 +471,25 @@ function MaterialViewerModal({ material, onClose, onDownload }) {
         {/* Modal Main Content Viewport */}
         <div className="flex-1 min-h-0 bg-slate-900/5 relative overflow-hidden flex items-center justify-center">
           {fileCategory === 'pdf' ? (
-            <iframe
-              src={getIframeSrc()}
-              title={material.title}
-              className="w-full h-full border-0 bg-white"
-            />
+            <div className="w-full h-full relative flex flex-col">
+              <iframe
+                src={getIframeSrc()}
+                title={material.title}
+                className="w-full h-full border-0 bg-white flex-1"
+              />
+              <div className="sm:hidden px-3 py-2 bg-slate-100 border-t border-slate-200 flex items-center justify-between text-xs shrink-0">
+                <span className="text-[11px] text-slate-600 font-medium truncate">Document preview on mobile</span>
+                <a
+                  href={streamViewUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="px-2.5 py-1 bg-brand-600 text-white font-bold text-[11px] rounded-lg shrink-0 flex items-center gap-1 shadow-2xs"
+                >
+                  <ExternalLink size={12} />
+                  <span>Open Full PDF</span>
+                </a>
+              </div>
+            </div>
           ) : fileCategory === 'image' ? (
             <div className="w-full h-full overflow-auto flex items-center justify-center p-4 bg-slate-950/90 select-none">
               <img
@@ -583,6 +615,8 @@ export default function MaterialsPage() {
     topic: '',
   });
   const [statusMessage, setStatusMessage] = useState({ type: '', text: '' });
+  const [uploading, setUploading] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState(0);
 
   // Edit Material State
   const [editingMaterial, setEditingMaterial] = useState(null);
@@ -593,6 +627,7 @@ export default function MaterialsPage() {
     unit: 1,
     topic: '',
   });
+  const [updating, setUpdating] = useState(false);
 
   const handleOpenEdit = (mat) => {
     setEditingMaterial(mat);
@@ -607,6 +642,8 @@ export default function MaterialsPage() {
 
   const handleUpdateMaterial = async (e) => {
     e.preventDefault();
+    if (updating) return;
+    setUpdating(true);
     try {
       const res = await api.put(`/materials/${editingMaterial._id}`, editData);
       if (res.data?.success) {
@@ -616,6 +653,8 @@ export default function MaterialsPage() {
       }
     } catch (err) {
       setStatusMessage({ type: 'error', text: err.response?.data?.message || 'Failed to update material' });
+    } finally {
+      setUpdating(false);
     }
   };
 
@@ -710,17 +749,29 @@ export default function MaterialsPage() {
       return;
     }
 
+    if (uploading) return; // Prevent double submit
+
+    setUploading(true);
+    setUploadProgress(0);
+    setStatusMessage({ type: '', text: '' });
+
     const data = new FormData();
     data.append('file', file);
     data.append('title', uploadData.title);
-    data.append('description', uploadData.description);
+    data.append('description', uploadData.description || '');
     data.append('subject', uploadData.subject);
     data.append('unit', uploadData.unit);
-    data.append('topic', uploadData.topic);
+    data.append('topic', uploadData.topic || '');
 
     try {
       const res = await api.post('/materials/upload', data, {
         headers: { 'Content-Type': 'multipart/form-data' },
+        onUploadProgress: (progressEvent) => {
+          if (progressEvent.total) {
+            const percent = Math.round((progressEvent.loaded * 100) / progressEvent.total);
+            setUploadProgress(percent);
+          }
+        },
       });
       if (res.data?.success) {
         setStatusMessage({ type: 'success', text: 'Study material published successfully!' });
@@ -731,6 +782,9 @@ export default function MaterialsPage() {
       }
     } catch (err) {
       setStatusMessage({ type: 'error', text: err.response?.data?.message || 'Upload failed' });
+    } finally {
+      setUploading(false);
+      setUploadProgress(0);
     }
   };
 
@@ -743,10 +797,14 @@ export default function MaterialsPage() {
     const downloadUrl = getMaterialDownloadUrl(id);
     const link = document.createElement('a');
     link.href = downloadUrl;
-    link.setAttribute('download', fileName || 'study-material.pdf');
+    link.setAttribute('download', fileName || 'study-material');
+    link.setAttribute('target', '_blank');
+    link.setAttribute('rel', 'noopener noreferrer');
     document.body.appendChild(link);
     link.click();
-    document.body.removeChild(link);
+    setTimeout(() => {
+      if (document.body.contains(link)) document.body.removeChild(link);
+    }, 200);
 
     // Optimistically increment download count in local state
     setMaterials((prev) =>
@@ -1052,15 +1110,25 @@ export default function MaterialsPage() {
                     <span>View Online</span>
                   </button>
 
-                  <button
-                    type="button"
-                    onClick={() => handleDownload(mat._id, mat.fileName)}
-                    className="w-full py-2.5 px-3 rounded-xl bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold flex items-center justify-center gap-1.5 transition cursor-pointer shadow-2xs"
+                  <a
+                    href={getMaterialDownloadUrl(mat._id)}
+                    download={mat.fileName || 'study-material'}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    onClick={() => {
+                      try {
+                        api.patch(`/materials/${mat._id}/download`).catch(() => {});
+                      } catch {}
+                      setMaterials((prev) =>
+                        prev.map((m) => (m._id === mat._id ? { ...m, downloadCount: (m.downloadCount || 0) + 1 } : m))
+                      );
+                    }}
+                    className="w-full py-2.5 px-3 rounded-xl bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold flex items-center justify-center gap-1.5 transition cursor-pointer shadow-2xs text-center"
                     title="Download file directly to device"
                   >
                     <Download size={14} />
                     <span>Download</span>
-                  </button>
+                  </a>
                 </div>
               </div>
             </div>
@@ -1111,12 +1179,40 @@ export default function MaterialsPage() {
             <div className="flex items-center justify-between border-b border-slate-100 pb-3">
               <h3 className="text-base font-extrabold text-slate-900">Upload Learning Resource</h3>
               <button
-                onClick={() => setShowUploadModal(false)}
-                className="w-8 h-8 rounded-full bg-slate-100 text-slate-600 flex items-center justify-center font-bold hover:bg-slate-200 cursor-pointer"
+                type="button"
+                disabled={uploading}
+                onClick={() => !uploading && setShowUploadModal(false)}
+                className={`w-8 h-8 rounded-full flex items-center justify-center font-bold transition ${
+                  uploading
+                    ? 'bg-slate-50 text-slate-300 cursor-not-allowed'
+                    : 'bg-slate-100 text-slate-600 hover:bg-slate-200 cursor-pointer'
+                }`}
+                title="Close"
               >
                 ✕
               </button>
             </div>
+
+            {uploading && (
+              <div className="p-4 rounded-2xl bg-brand-50 border border-brand-200 space-y-2.5 animate-in fade-in duration-150">
+                <div className="flex items-center justify-between text-xs">
+                  <div className="flex items-center gap-2 text-brand-900 font-extrabold">
+                    <Loader2 size={16} className="animate-spin text-brand-600" />
+                    <span>Uploading study resource...</span>
+                  </div>
+                  <span className="font-extrabold text-brand-700">{uploadProgress}%</span>
+                </div>
+                <div className="w-full bg-brand-100 rounded-full h-2.5 overflow-hidden">
+                  <div
+                    className="bg-gradient-to-r from-brand-600 to-indigo-600 h-full rounded-full transition-all duration-150 ease-out"
+                    style={{ width: `${Math.max(5, uploadProgress)}%` }}
+                  />
+                </div>
+                <p className="text-[11px] text-brand-600 font-medium text-center">
+                  Please keep this modal open while your file is securely transferring to the repository.
+                </p>
+              </div>
+            )}
 
             <form onSubmit={handleUpload} className="space-y-4">
               <div>
@@ -1124,19 +1220,21 @@ export default function MaterialsPage() {
                 <input
                   type="text"
                   required
+                  disabled={uploading}
                   placeholder="e.g. Distributed Consensus Algorithms (Raft & Paxos)"
                   value={uploadData.title}
                   onChange={(e) => setUploadData({ ...uploadData, title: e.target.value })}
-                  className="w-full px-3 py-2 text-xs border border-slate-200 rounded-xl outline-none"
+                  className="w-full px-3 py-2 text-xs border border-slate-200 rounded-xl outline-none disabled:bg-slate-50 disabled:text-slate-400"
                 />
               </div>
 
               <div>
                 <label className="block text-xs font-bold text-slate-700 mb-1">Subject *</label>
                 <select
+                  disabled={uploading}
                   value={uploadData.subject}
                   onChange={(e) => setUploadData({ ...uploadData, subject: e.target.value })}
-                  className="w-full px-3 py-2 text-xs border border-slate-200 rounded-xl outline-none"
+                  className="w-full px-3 py-2 text-xs border border-slate-200 rounded-xl outline-none disabled:bg-slate-50 disabled:text-slate-400"
                 >
                   {subjects.map((s) => (
                     <option key={s._id} value={s._id}>
@@ -1153,19 +1251,21 @@ export default function MaterialsPage() {
                     type="number"
                     min="1"
                     max="5"
+                    disabled={uploading}
                     value={uploadData.unit}
                     onChange={(e) => setUploadData({ ...uploadData, unit: Number(e.target.value) })}
-                    className="w-full px-3 py-2 text-xs border border-slate-200 rounded-xl outline-none"
+                    className="w-full px-3 py-2 text-xs border border-slate-200 rounded-xl outline-none disabled:bg-slate-50 disabled:text-slate-400"
                   />
                 </div>
                 <div>
                   <label className="block text-xs font-bold text-slate-700 mb-1">Topic</label>
                   <input
                     type="text"
+                    disabled={uploading}
                     placeholder="e.g. State Machine Replication"
                     value={uploadData.topic}
                     onChange={(e) => setUploadData({ ...uploadData, topic: e.target.value })}
-                    className="w-full px-3 py-2 text-xs border border-slate-200 rounded-xl outline-none"
+                    className="w-full px-3 py-2 text-xs border border-slate-200 rounded-xl outline-none disabled:bg-slate-50 disabled:text-slate-400"
                   />
                 </div>
               </div>
@@ -1174,10 +1274,11 @@ export default function MaterialsPage() {
                 <label className="block text-xs font-bold text-slate-700 mb-1">Description</label>
                 <textarea
                   rows="2"
+                  disabled={uploading}
                   placeholder="Brief overview of contents..."
                   value={uploadData.description}
                   onChange={(e) => setUploadData({ ...uploadData, description: e.target.value })}
-                  className="w-full px-3 py-2 text-xs border border-slate-200 rounded-xl outline-none"
+                  className="w-full px-3 py-2 text-xs border border-slate-200 rounded-xl outline-none disabled:bg-slate-50 disabled:text-slate-400"
                 />
               </div>
 
@@ -1186,24 +1287,41 @@ export default function MaterialsPage() {
                 <input
                   type="file"
                   required
+                  disabled={uploading}
                   onChange={(e) => setFile(e.target.files[0])}
-                  className="w-full text-xs text-slate-500 file:mr-3 file:py-2 file:px-4 file:rounded-xl file:border-0 file:text-xs file:font-bold file:bg-slate-100 file:text-slate-700 hover:file:bg-slate-200 cursor-pointer"
+                  className="w-full text-xs text-slate-500 file:mr-3 file:py-2 file:px-4 file:rounded-xl file:border-0 file:text-xs file:font-bold file:bg-slate-100 file:text-slate-700 hover:file:bg-slate-200 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
                 />
               </div>
 
               <div className="pt-4 flex justify-end gap-3 border-t border-slate-100">
                 <button
                   type="button"
+                  disabled={uploading}
                   onClick={() => setShowUploadModal(false)}
-                  className="px-4 py-2 rounded-xl text-slate-600 text-xs font-semibold hover:bg-slate-100"
+                  className="px-4 py-2 rounded-xl text-slate-600 text-xs font-semibold hover:bg-slate-100 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
-                  className="px-6 py-2.5 rounded-xl bg-brand-600 hover:bg-brand-700 text-white text-xs font-bold shadow-md cursor-pointer"
+                  disabled={uploading}
+                  className={`px-6 py-2.5 rounded-xl text-white text-xs font-bold shadow-md flex items-center justify-center gap-2 transition ${
+                    uploading
+                      ? 'bg-brand-400 cursor-not-allowed'
+                      : 'bg-brand-600 hover:bg-brand-700 cursor-pointer active:scale-95'
+                  }`}
                 >
-                  Publish Resource
+                  {uploading ? (
+                    <>
+                      <Loader2 size={14} className="animate-spin" />
+                      <span>Uploading ({uploadProgress}%)...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Upload size={14} />
+                      <span>Publish Resource</span>
+                    </>
+                  )}
                 </button>
               </div>
             </form>
@@ -1218,8 +1336,15 @@ export default function MaterialsPage() {
             <div className="flex items-center justify-between border-b border-slate-100 pb-3">
               <h3 className="text-base font-extrabold text-slate-900">Edit Study Material</h3>
               <button
-                onClick={() => setEditingMaterial(null)}
-                className="w-8 h-8 rounded-full bg-slate-100 text-slate-600 flex items-center justify-center font-bold hover:bg-slate-200 cursor-pointer"
+                type="button"
+                disabled={updating}
+                onClick={() => !updating && setEditingMaterial(null)}
+                className={`w-8 h-8 rounded-full flex items-center justify-center font-bold transition ${
+                  updating
+                    ? 'bg-slate-50 text-slate-300 cursor-not-allowed'
+                    : 'bg-slate-100 text-slate-600 hover:bg-slate-200 cursor-pointer'
+                }`}
+                title="Close"
               >
                 ✕
               </button>
@@ -1231,18 +1356,20 @@ export default function MaterialsPage() {
                 <input
                   type="text"
                   required
+                  disabled={updating}
                   value={editData.title}
                   onChange={(e) => setEditData({ ...editData, title: e.target.value })}
-                  className="w-full px-3 py-2 text-xs border border-slate-200 rounded-xl outline-none"
+                  className="w-full px-3 py-2 text-xs border border-slate-200 rounded-xl outline-none disabled:bg-slate-50 disabled:text-slate-400"
                 />
               </div>
 
               <div>
                 <label className="block text-xs font-bold text-slate-700 mb-1">Subject *</label>
                 <select
+                  disabled={updating}
                   value={editData.subject}
                   onChange={(e) => setEditData({ ...editData, subject: e.target.value })}
-                  className="w-full px-3 py-2 text-xs border border-slate-200 rounded-xl outline-none"
+                  className="w-full px-3 py-2 text-xs border border-slate-200 rounded-xl outline-none disabled:bg-slate-50 disabled:text-slate-400"
                 >
                   {subjects.map((s) => (
                     <option key={s._id} value={s._id}>
@@ -1259,18 +1386,20 @@ export default function MaterialsPage() {
                     type="number"
                     min="1"
                     max="5"
+                    disabled={updating}
                     value={editData.unit}
                     onChange={(e) => setEditData({ ...editData, unit: Number(e.target.value) })}
-                    className="w-full px-3 py-2 text-xs border border-slate-200 rounded-xl outline-none"
+                    className="w-full px-3 py-2 text-xs border border-slate-200 rounded-xl outline-none disabled:bg-slate-50 disabled:text-slate-400"
                   />
                 </div>
                 <div>
                   <label className="block text-xs font-bold text-slate-700 mb-1">Topic</label>
                   <input
                     type="text"
+                    disabled={updating}
                     value={editData.topic}
                     onChange={(e) => setEditData({ ...editData, topic: e.target.value })}
-                    className="w-full px-3 py-2 text-xs border border-slate-200 rounded-xl outline-none"
+                    className="w-full px-3 py-2 text-xs border border-slate-200 rounded-xl outline-none disabled:bg-slate-50 disabled:text-slate-400"
                   />
                 </div>
               </div>
@@ -1279,25 +1408,39 @@ export default function MaterialsPage() {
                 <label className="block text-xs font-bold text-slate-700 mb-1">Description</label>
                 <textarea
                   rows="3"
+                  disabled={updating}
                   value={editData.description}
                   onChange={(e) => setEditData({ ...editData, description: e.target.value })}
-                  className="w-full px-3 py-2 text-xs border border-slate-200 rounded-xl outline-none"
+                  className="w-full px-3 py-2 text-xs border border-slate-200 rounded-xl outline-none disabled:bg-slate-50 disabled:text-slate-400"
                 />
               </div>
 
               <div className="pt-4 flex justify-end gap-3 border-t border-slate-100">
                 <button
                   type="button"
+                  disabled={updating}
                   onClick={() => setEditingMaterial(null)}
-                  className="px-4 py-2 rounded-xl text-slate-600 text-xs font-semibold hover:bg-slate-100 cursor-pointer"
+                  className="px-4 py-2 rounded-xl text-slate-600 text-xs font-semibold hover:bg-slate-100 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
-                  className="px-6 py-2.5 rounded-xl bg-brand-600 hover:bg-brand-700 text-white text-xs font-bold shadow-md cursor-pointer"
+                  disabled={updating}
+                  className={`px-6 py-2.5 rounded-xl text-white text-xs font-bold shadow-md flex items-center justify-center gap-2 transition ${
+                    updating
+                      ? 'bg-brand-400 cursor-not-allowed'
+                      : 'bg-brand-600 hover:bg-brand-700 cursor-pointer active:scale-95'
+                  }`}
                 >
-                  Update Resource
+                  {updating ? (
+                    <>
+                      <Loader2 size={14} className="animate-spin" />
+                      <span>Updating...</span>
+                    </>
+                  ) : (
+                    <span>Update Resource</span>
+                  )}
                 </button>
               </div>
             </form>

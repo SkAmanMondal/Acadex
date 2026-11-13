@@ -64,6 +64,8 @@ app.use(cookieParser());
 // Static file serving for uploaded files (handles both local dev and production paths)
 app.use('/uploads', express.static(path.resolve('uploads')));
 app.use('/uploads', express.static(path.resolve('../uploads')));
+app.use('/api/uploads', express.static(path.resolve('uploads')));
+app.use('/api/uploads', express.static(path.resolve('../uploads')));
 
 // Health check endpoint
 app.get('/api/health', (req, res) => {

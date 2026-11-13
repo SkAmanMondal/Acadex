@@ -111,18 +111,37 @@ export const streamMaterialFile = async (req, res, disposition = 'attachment') =
     if (
       material.storageType === 'local' ||
       accessUrl?.startsWith('/uploads/') ||
+      accessUrl?.startsWith('/api/uploads/') ||
       (!accessUrl.startsWith('http://') && !accessUrl.startsWith('https://'))
     ) {
-      const relativePath = accessUrl.replace(/^\/uploads\//, '');
-      const localFilePath = path.resolve('uploads', relativePath);
-      if (!fs.existsSync(localFilePath)) {
-        const fallbackPath = path.resolve('../uploads', relativePath);
-        if (fs.existsSync(fallbackPath)) {
-          return fs.createReadStream(fallbackPath).pipe(res);
+      const cleanRelative = accessUrl
+        .replace(/^https?:\/\/[^/]+/, '')
+        .replace(/^\/api/, '')
+        .replace(/^\/?uploads\/?/, '');
+
+      const candidatePaths = [
+        path.resolve('uploads', cleanRelative),
+        path.resolve('../uploads', cleanRelative),
+        path.resolve('server/uploads', cleanRelative),
+        path.resolve('../server/uploads', cleanRelative),
+        path.resolve('uploads/materials', path.basename(cleanRelative)),
+        path.resolve('../uploads/materials', path.basename(cleanRelative)),
+        path.resolve('server/uploads/materials', path.basename(cleanRelative)),
+        path.resolve('../server/uploads/materials', path.basename(cleanRelative)),
+      ];
+
+      let foundPath = null;
+      for (const p of candidatePaths) {
+        if (fs.existsSync(p)) {
+          foundPath = p;
+          break;
         }
-        return res.status(404).send('File not found on server storage');
       }
-      return fs.createReadStream(localFilePath).pipe(res);
+
+      if (foundPath) {
+        return fs.createReadStream(foundPath).pipe(res);
+      }
+      return res.status(404).send('File not found on server storage');
     }
 
     // Remote file (Cloudinary CDN signed private download URL)
