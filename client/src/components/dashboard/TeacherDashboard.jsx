@@ -112,11 +112,18 @@ export default function TeacherDashboard({ user }) {
     };
   }, [socket]);
 
-  const handleActivateAttendance = async (timetableId) => {
+  const handleActivateAttendance = async (slot) => {
+    const slotId = typeof slot === 'string' ? slot : (slot.timetable?._id || slot.timetable || slot._id);
+    const dailyClassId = typeof slot === 'object' && slot.timetable ? slot._id : undefined;
+    const timetableId = typeof slot === 'object' ? (slot.timetable?._id || slot.timetable || slot._id) : slot;
+
     try {
-      setActivatingSlotId(timetableId);
+      setActivatingSlotId(slotId);
       setActivationMsg({ type: '', text: '' });
-      const res = await api.post('/attendance/session/activate', { timetableId });
+      const res = await api.post('/attendance/session/activate', {
+        timetableId,
+        dailyClassId,
+      });
       if (res.data?.success) {
         setActiveSession(res.data.data);
         setShowSessionModal(true); // Open modal with code, open scanner button, and cancel button!
@@ -443,7 +450,7 @@ export default function TeacherDashboard({ user }) {
                       </Link>
                     ) : (
                       <button
-                        onClick={() => handleActivateAttendance(timetableTargetId)}
+                        onClick={() => handleActivateAttendance(slot)}
                         disabled={activatingSlotId === timetableTargetId}
                         className="px-4 py-2 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white text-xs font-bold shadow-sm hover:shadow transition cursor-pointer flex items-center justify-center gap-1.5 self-start sm:self-auto disabled:opacity-50"
                       >

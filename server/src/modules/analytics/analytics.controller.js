@@ -310,6 +310,12 @@ export const getDashboardMetrics = async (req, res) => {
 
     // 3. TEACHER DASHBOARD METRICS
     if (role === 'teacher') {
+      const DAYS_OF_WEEK = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+      const currentDayName = DAYS_OF_WEEK[new Date().getDay()];
+
+      // Materialize daily classes for today so teacher schedule is guaranteed in sync
+      await ensureDailyClassesForDate(todayStr, req.user.department?._id || req.user.department).catch(() => {});
+
       const [
         myTimetableSlots,
         myMaterials,
@@ -330,12 +336,14 @@ export const getDashboardMetrics = async (req, res) => {
           .sort({ createdAt: -1 })
           .populate('subject batch classroom', 'name code roomNumber')
           .lean(),
-        DailyClass.find({ date: todayStr, teacher: userId })
-          .select('subject batch classroom teacher originalTeacher startTime endTime status isSubstituted pauseReason')
-          .populate('subject batch classroom teacher originalTeacher', 'name code roomNumber')
+        DailyClass.find({ date: todayStr, $or: [{ teacher: userId }, { originalTeacher: userId }] })
+          .select('subject batch classroom teacher originalTeacher startTime endTime status isSubstituted pauseReason timetable')
+          .populate('subject batch classroom teacher originalTeacher timetable', 'name code roomNumber day startTime endTime')
           .sort({ startTime: 1 })
           .lean(),
       ]);
+
+      const todayFallbackSlots = myTimetableSlots.filter((s) => s.day === currentDayName);
 
       // Calculate attendance defaulters count among teacher's mentees (< 75%)
       let menteeDefaultersCount = 0;
@@ -376,7 +384,7 @@ export const getDashboardMetrics = async (req, res) => {
       return sendSuccess(res, 'Teacher overview metrics', {
         role: 'teacher',
         totalSlots: myTimetableSlots.length,
-        todaySlots: myDailyClasses.length > 0 ? myDailyClasses : myTimetableSlots,
+        todaySlots: myDailyClasses.length > 0 ? myDailyClasses : todayFallbackSlots,
         totalMaterials: myMaterials,
         totalAssignments: myAssignments,
         totalQuizzes: myQuizzes,

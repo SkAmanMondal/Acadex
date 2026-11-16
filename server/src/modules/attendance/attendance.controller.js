@@ -95,6 +95,8 @@ export const activateSession = async (req, res) => {
     let timetable;
     let dailyClass;
     const todayStr = formatDateToYMD(new Date());
+    const DAYS_OF_WEEK = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+    const currentDayName = DAYS_OF_WEEK[new Date().getDay()];
 
     if (dailyClassId) {
       dailyClass = await DailyClass.findById(dailyClassId)
@@ -105,7 +107,35 @@ export const activateSession = async (req, res) => {
     }
 
     if (!timetable && timetableId) {
+      // 1. Try finding in master Timetable collection
       timetable = await Timetable.findById(timetableId).populate('batch subject classroom department');
+
+      // 2. If not found in Timetable, check if timetableId is actually a DailyClass ID
+      if (!timetable) {
+        const dc = await DailyClass.findById(timetableId).populate('batch subject classroom department teacher originalTeacher timetable');
+        if (dc) {
+          dailyClass = dc;
+          timetable = dc.timetable;
+        }
+      }
+    }
+
+    // If timetable is an unpopulated ObjectId, populate it
+    if (timetable && (typeof timetable === 'string' || timetable instanceof mongoose.Types.ObjectId)) {
+      timetable = await Timetable.findById(timetable).populate('batch subject classroom department');
+    }
+
+    // 3. Fallback: If dailyClass was found but timetable document is missing or ad-hoc
+    if (!timetable && dailyClass) {
+      timetable = {
+        _id: dailyClass.timetable || dailyClass._id,
+        subject: dailyClass.subject,
+        batch: dailyClass.batch,
+        classroom: dailyClass.classroom,
+        department: dailyClass.department,
+        teacher: dailyClass.teacher,
+        day: currentDayName,
+      };
     }
 
     if (!timetable) {
@@ -116,15 +146,13 @@ export const activateSession = async (req, res) => {
     if (!dailyClass) {
       dailyClass = await DailyClass.findOne({ timetable: timetable._id, date: todayStr });
       if (!dailyClass) {
-        await ensureDailyClassesForDate(todayStr, (timetable.department?._id || timetable.department)?.toString());
+        await ensureDailyClassesForDate(todayStr, (timetable.department?._id || timetable.department)?.toString()).catch(() => {});
         dailyClass = await DailyClass.findOne({ timetable: timetable._id, date: todayStr });
       }
     }
 
     // Ethical & Schedule Integrity Check 1: Day of week verification
-    const DAYS_OF_WEEK = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
-    const currentDayName = DAYS_OF_WEEK[new Date().getDay()];
-    if (timetable.day !== currentDayName && (!dailyClass || dailyClass.date !== todayStr)) {
+    if (timetable.day && timetable.day !== currentDayName && (!dailyClass || dailyClass.date !== todayStr)) {
       return sendError(
         res,
         `Schedule Mismatch: This class is scheduled for ${timetable.day}, but today is ${currentDayName}. You cannot launch attendance for a class scheduled on a different day.`,
@@ -504,11 +532,25 @@ export const scanStudentQr = async (req, res) => {
 
 export const getSessionRecords = async (req, res) => {
   try {
-    const records = await AttendanceRecord.find({ session: req.params.id })
-      .populate('student', 'name email')
-      .sort({ scannedAt: -1 });
+    const records = await AttendanceRecord.find({ session: req.params.id, status: 'present' })
+      .populate('student', 'name email avatar')
+      .sort({ scannedAt: -1 })
+      .lean();
 
-    return sendSuccess(res, 'Session attendance records retrieved', records);
+    const studentUserIds = records.map((r) => r.student?._id).filter(Boolean);
+    const profiles = await StudentProfile.find({ user: { $in: studentUserIds } }).select('user rollNumber').lean();
+    const profileMap = new Map();
+    profiles.forEach((p) => profileMap.set(p.user.toString(), p.rollNumber));
+
+    const populated = records.map((r) => ({
+      ...r,
+      student: {
+        ...(r.student || {}),
+        rollNumber: profileMap.get(r.student?._id?.toString()) || 'Student',
+      },
+    }));
+
+    return sendSuccess(res, 'Session attendance records retrieved', populated);
   } catch (err) {
     return sendError(res, err.message, 500);
   }
@@ -685,11 +727,34 @@ export const getActiveSessionForUser = async (req, res) => {
       ? Math.max(0, Math.floor((session.expiresAt - new Date()) / 1000))
       : (session.durationMinutes || 10) * 60;
 
+    // Fetch existing present records for this active session
+    const records = await AttendanceRecord.find({ session: session._id, status: 'present' })
+      .populate('student', 'name email avatar')
+      .sort({ scannedAt: -1 })
+      .lean();
+
+    const studentUserIds = records.map((r) => r.student?._id).filter(Boolean);
+    const profiles = await StudentProfile.find({ user: { $in: studentUserIds } }).select('user rollNumber').lean();
+    const profileMap = new Map();
+    profiles.forEach((p) => profileMap.set(p.user.toString(), p.rollNumber));
+
+    const populatedRecords = records.map((r) => ({
+      _id: r._id,
+      scannedAt: r.scannedAt,
+      student: {
+        _id: r.student?._id,
+        name: r.student?.name || 'Student',
+        email: r.student?.email,
+        rollNumber: profileMap.get(r.student?._id?.toString()) || 'Student',
+      },
+    }));
+
     return sendSuccess(res, 'Active attendance session retrieved', {
       activeSession: session,
       remainingSeconds,
       isPending: session.status === 'pending',
       isLive: session.status === 'active',
+      scannedRecords: populatedRecords,
     });
   } catch (err) {
     return sendError(res, err.message, 500);

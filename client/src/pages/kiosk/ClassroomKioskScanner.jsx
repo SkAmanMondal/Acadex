@@ -20,9 +20,10 @@ import {
   Keyboard,
   Upload,
 } from 'lucide-react';
-import { Link } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 
 export default function ClassroomKioskScanner() {
+  const [searchParams] = useSearchParams();
   const [sessionCodeInput, setSessionCodeInput] = useState('');
   const [activeSession, setActiveSession] = useState(null);
   const [sessionEndedByTeacher, setSessionEndedByTeacher] = useState(null);
@@ -106,9 +107,8 @@ export default function ClassroomKioskScanner() {
   }, [activeSession, remainingSeconds]);
 
   // Connect to session using 6-character code
-  const handleConnectSession = async (e) => {
-    if (e) e.preventDefault();
-    if (!sessionCodeInput.trim()) {
+  const connectToCode = async (rawCode) => {
+    if (!rawCode || !rawCode.trim()) {
       setError('Please enter the 6-character session code');
       return;
     }
@@ -117,7 +117,7 @@ export default function ClassroomKioskScanner() {
     setError('');
     setSessionEndedByTeacher(null);
     try {
-      const cleanCode = sessionCodeInput.trim().toUpperCase();
+      const cleanCode = rawCode.trim().toUpperCase();
       const res = await api.get(`/attendance/kiosk/session/${cleanCode}`);
       if (res.data?.success) {
         const { session, remainingSeconds: remSec } = res.data.data;
@@ -137,6 +137,21 @@ export default function ClassroomKioskScanner() {
       setLoading(false);
     }
   };
+
+  const handleConnectSession = (e) => {
+    if (e) e.preventDefault();
+    connectToCode(sessionCodeInput);
+  };
+
+  // Auto-connect if code is passed via URL (e.g. /kiosk?code=RSDU8X)
+  useEffect(() => {
+    const urlCode = searchParams.get('code');
+    if (urlCode && urlCode.trim()) {
+      const clean = urlCode.trim().toUpperCase();
+      setSessionCodeInput(clean);
+      connectToCode(clean);
+    }
+  }, [searchParams]);
 
   const handleScanProcess = async (token, code) => {
     if (!token) return;

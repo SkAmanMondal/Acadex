@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Html5Qrcode } from 'html5-qrcode';
 import api from '../../services/api';
+import { useSocket } from '../../context/SocketContext';
 import { playSuccessSound, playDuplicateSound, playWrongStudentSound } from '../../utils/scanSounds';
 import {
   Camera,
@@ -17,9 +18,11 @@ import {
   ShieldAlert,
   Info,
   ArrowUpRight,
+  SwitchCamera,
 } from 'lucide-react';
 
 export default function ClassroomScanner() {
+  const { socket } = useSocket();
   const [scheduledClasses, setScheduledClasses] = useState([]);
   const [selectedTimetable, setSelectedTimetable] = useState('');
   const [activeSession, setActiveSession] = useState(null);
@@ -30,9 +33,10 @@ export default function ClassroomScanner() {
   const [error, setError] = useState('');
   const [permissionDenied, setPermissionDenied] = useState(false);
 
-  // Available camera devices
+  // Available camera devices & facing mode
   const [cameras, setCameras] = useState([]);
   const [selectedCameraId, setSelectedCameraId] = useState('');
+  const [facingMode, setFacingMode] = useState('environment'); // 'environment' (rear camera) | 'user' (selfie camera)
 
   // Fallback modes
   const [activeTab, setActiveTab] = useState('webcam'); // 'webcam' | 'upload' | 'manual'
@@ -61,7 +65,62 @@ export default function ClassroomScanner() {
     }
   };
 
-  // Load teacher's scheduled classes
+  // 1. Real-time Socket.io listener for live attendance scans
+  useEffect(() => {
+    if (!socket || !activeSession) return;
+
+    // Join the session room for real-time live events
+    socket.emit('join_attendance_session', activeSession.sessionCode);
+
+    const onStudentScanned = (data) => {
+      if (
+        data.sessionId?.toString() === activeSession._id?.toString() ||
+        data.sessionCode === activeSession.sessionCode
+      ) {
+        setScannedRecords((prev) => {
+          if (
+            prev.some(
+              (r) =>
+                r.student?._id?.toString() === data.student?._id?.toString() ||
+                (r.student?.rollNumber && r.student?.rollNumber === data.student?.rollNumber)
+            )
+          ) {
+            return prev;
+          }
+          return [
+            {
+              _id: data.recordId || Date.now().toString(),
+              student: data.student,
+              scannedAt: data.scannedAt || new Date(),
+            },
+            ...prev,
+          ];
+        });
+        playSuccessSound();
+        setScanFeedback({
+          type: 'success',
+          message: `Live Scan Recorded: ${data.student?.name} (${data.student?.rollNumber})`,
+        });
+      }
+    };
+
+    const onSessionEnded = () => {
+      stopScanner();
+      setActiveSession(null);
+    };
+
+    socket.on('attendance_student_scanned', onStudentScanned);
+    socket.on('attendance_session_ended', onSessionEnded);
+    socket.on('attendance_session_cancelled', onSessionEnded);
+
+    return () => {
+      socket.off('attendance_student_scanned', onStudentScanned);
+      socket.off('attendance_session_ended', onSessionEnded);
+      socket.off('attendance_session_cancelled', onSessionEnded);
+    };
+  }, [socket, activeSession?._id, activeSession?.sessionCode]);
+
+  // 2. Load teacher's scheduled classes and any active session with its scanned records
   useEffect(() => {
     const fetchSchedules = async () => {
       try {
@@ -82,6 +141,9 @@ export default function ClassroomScanner() {
           setActiveSession(act);
           if (activeRes.value.data.data.remainingSeconds) {
             setRemainingSeconds(activeRes.value.data.data.remainingSeconds);
+          }
+          if (activeRes.value.data.data.scannedRecords) {
+            setScannedRecords(activeRes.value.data.data.scannedRecords);
           }
         }
       } catch (err) {
@@ -241,15 +303,27 @@ export default function ClassroomScanner() {
     }
   };
 
-  const startWebcam = async (sessionId, cameraId) => {
+  const startWebcam = async (sessionId, cameraIdOrConfig) => {
     try {
       setIsScanning(true);
       setError('');
       setPermissionDenied(false);
 
+      // Wait for #qr-reader element to be mounted in the DOM
+      let attempts = 0;
+      while (!document.getElementById('qr-reader') && attempts < 15) {
+        await new Promise((resolve) => setTimeout(resolve, 60));
+        attempts++;
+      }
+
+      if (!document.getElementById('qr-reader')) {
+        throw new Error('Webcam container not ready in DOM.');
+      }
+
       if (html5QrCodeRef.current) {
         try {
           await html5QrCodeRef.current.stop();
+          html5QrCodeRef.current.clear();
         } catch (e) {}
       }
 
@@ -260,7 +334,17 @@ export default function ClassroomScanner() {
       });
       html5QrCodeRef.current = html5QrCode;
 
-      const cameraConfig = cameraId ? cameraId : { facingMode: 'user' };
+      // Determine camera config: string deviceId or facingMode object (defaulting to rear camera)
+      let cameraConfig;
+      if (typeof cameraIdOrConfig === 'string' && cameraIdOrConfig) {
+        cameraConfig = cameraIdOrConfig;
+      } else if (cameraIdOrConfig && typeof cameraIdOrConfig === 'object') {
+        cameraConfig = cameraIdOrConfig;
+      } else if (selectedCameraId) {
+        cameraConfig = selectedCameraId;
+      } else {
+        cameraConfig = { facingMode: { ideal: facingMode } };
+      }
 
       const qrboxFunction = (viewfinderWidth, viewfinderHeight) => {
         const minEdge = Math.min(viewfinderWidth, viewfinderHeight);
@@ -271,7 +355,7 @@ export default function ClassroomScanner() {
       await html5QrCode.start(
         cameraConfig,
         {
-          fps: 25, // High responsive frame-rate
+          fps: 25,
           qrbox: qrboxFunction,
           aspectRatio: 1.777778,
         },
@@ -282,13 +366,59 @@ export default function ClassroomScanner() {
           // Normal frame scan tick
         }
       );
+      setIsScanning(true);
     } catch (camErr) {
       console.error('Webcam start failed:', camErr);
       setPermissionDenied(true);
-      setError('Unable to activate video stream. Please grant camera permission or use the fallback options below.');
+      setError('Unable to activate video stream. Please grant camera permission or use the flip/fallback options below.');
       setIsScanning(false);
     }
   };
+
+  // Flip Camera between Rear (Environment) and Front (User)
+  const handleFlipCamera = async () => {
+    if (!activeSession) return;
+    const newMode = facingMode === 'environment' ? 'user' : 'environment';
+    setFacingMode(newMode);
+
+    await stopScanner();
+
+    // If multiple cameras enumerated in the device list, cycle to the next device ID
+    if (cameras.length > 1) {
+      const currIdx = cameras.findIndex((c) => c.id === selectedCameraId);
+      const nextIdx = (currIdx + 1) % cameras.length;
+      const nextCamera = cameras[nextIdx];
+      setSelectedCameraId(nextCamera.id);
+      await startWebcam(activeSession._id, nextCamera.id);
+    } else {
+      await startWebcam(activeSession._id, { facingMode: { ideal: newMode } });
+    }
+  };
+
+  // Auto-start webcam whenever an active session is loaded and webcam tab is selected
+  useEffect(() => {
+    if (!activeSession?._id || activeTab !== 'webcam') return;
+
+    let isMounted = true;
+    const autoInitTimer = setTimeout(async () => {
+      try {
+        let camId = selectedCameraId;
+        if (cameras.length === 0) {
+          camId = await requestCameraPermissionAndDiscover();
+        }
+        if (isMounted && activeSession?._id) {
+          startWebcam(activeSession._id, camId || { facingMode: { ideal: facingMode } });
+        }
+      } catch (e) {
+        console.warn('Auto webcam start error:', e);
+      }
+    }, 150);
+
+    return () => {
+      isMounted = false;
+      clearTimeout(autoInitTimer);
+    };
+  }, [activeSession?._id, activeTab]);
 
   const stopScanner = async () => {
     if (html5QrCodeRef.current) {
@@ -462,7 +592,7 @@ export default function ClassroomScanner() {
                       </div>
                     </div>
                     <a
-                      href="/kiosk"
+                      href={`/kiosk?code=${activeSession.sessionCode}`}
                       target="_blank"
                       rel="noreferrer"
                       className="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 transition shadow-md shadow-blue-500/25 cursor-pointer"
@@ -472,7 +602,7 @@ export default function ClassroomScanner() {
                     </a>
                   </div>
                   <p className="text-[11px] text-slate-300 leading-relaxed border-t border-slate-800 pt-2">
-                    Open <strong className="text-white">http://localhost:5173/kiosk</strong> on the classroom computer and enter code <strong className="text-amber-300">{activeSession.sessionCode}</strong>. Students can scan directly on the big screen!
+                    Open <strong className="text-white">{typeof window !== 'undefined' ? window.location.origin : 'http://localhost:5173'}/kiosk?code={activeSession.sessionCode}</strong> on the classroom computer. The session code <strong className="text-amber-300">{activeSession.sessionCode}</strong> is automatically integrated!
                   </p>
                 </div>
 
@@ -481,8 +611,8 @@ export default function ClassroomScanner() {
                   <button
                     onClick={() => {
                       setActiveTab('webcam');
-                      if (activeSession && cameras.length > 0) {
-                        startWebcam(activeSession._id, selectedCameraId);
+                      if (activeSession) {
+                        startWebcam(activeSession._id, selectedCameraId || { facingMode: { ideal: facingMode } });
                       }
                     }}
                     className={`px-3 py-1.5 rounded-lg flex items-center gap-1.5 cursor-pointer transition shrink-0 ${
@@ -529,26 +659,68 @@ export default function ClassroomScanner() {
                 {/* Tab 1: Live Webcam Feed */}
                 {activeTab === 'webcam' && (
                   <div className="space-y-3">
-                    {cameras.length > 1 && (
-                      <div className="flex items-center gap-2 text-xs">
-                        <span className="text-slate-500 font-medium">Select Camera:</span>
-                        <select
-                          value={selectedCameraId}
-                          onChange={(e) => {
-                            setSelectedCameraId(e.target.value);
-                            startWebcam(activeSession._id, e.target.value);
-                          }}
-                          className="p-1.5 border border-slate-200 rounded-lg text-xs bg-slate-50"
-                        >
-                          {cameras.map((c) => (
-                            <option key={c.id} value={c.id}>{c.label || `Camera ${c.id.substring(0, 5)}`}</option>
-                          ))}
-                        </select>
+                    <div className="flex items-center justify-between flex-wrap gap-2 text-xs">
+                      <div className="flex items-center gap-2">
+                        {cameras.length > 1 && (
+                          <div className="flex items-center gap-1.5">
+                            <span className="text-slate-500 font-medium">Camera:</span>
+                            <select
+                              value={selectedCameraId}
+                              onChange={(e) => {
+                                setSelectedCameraId(e.target.value);
+                                startWebcam(activeSession._id, e.target.value);
+                              }}
+                              className="p-1.5 border border-slate-200 rounded-lg text-xs bg-slate-50 font-medium cursor-pointer"
+                            >
+                              {cameras.map((c) => (
+                                <option key={c.id} value={c.id}>
+                                  {c.label || `Camera ${c.id.substring(0, 5)}`}
+                                </option>
+                              ))}
+                            </select>
+                          </div>
+                        )}
                       </div>
-                    )}
 
-                    <div className="relative overflow-hidden rounded-2xl bg-black aspect-video flex items-center justify-center border border-slate-800">
+                      {/* Flip Camera and Restart Controls */}
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={handleFlipCamera}
+                          className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-800 rounded-lg font-bold text-xs flex items-center gap-1.5 transition cursor-pointer shadow-2xs border border-slate-200"
+                          title="Switch between front and rear cameras"
+                        >
+                          <SwitchCamera size={14} className="text-blue-600" />
+                          <span>Flip Camera ({facingMode === 'environment' ? 'Rear' : 'Front'})</span>
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => startWebcam(activeSession._id, selectedCameraId || { facingMode: { ideal: facingMode } })}
+                          className="px-2.5 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-xs font-semibold flex items-center gap-1 transition cursor-pointer border border-slate-200"
+                          title="Restart Camera"
+                        >
+                          <RefreshCw size={13} className={isScanning ? '' : 'text-amber-600 animate-spin'} />
+                          <span>Restart</span>
+                        </button>
+                      </div>
+                    </div>
+
+                    <div className="relative overflow-hidden rounded-2xl bg-black aspect-video flex items-center justify-center border border-slate-800 shadow-inner">
                       <div id="qr-reader" className="w-full h-full" />
+                      {!isScanning && (
+                        <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/80 text-white p-4 text-center z-10">
+                          <Camera size={36} className="text-slate-400 mb-2 animate-pulse" />
+                          <p className="text-xs font-semibold text-slate-200">Camera Initializing...</p>
+                          <button
+                            type="button"
+                            onClick={() => startWebcam(activeSession._id, selectedCameraId || { facingMode: { ideal: facingMode } })}
+                            className="mt-3 px-3.5 py-1.5 bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold rounded-xl transition cursor-pointer"
+                          >
+                            Start Camera Now
+                          </button>
+                        </div>
+                      )}
                     </div>
                   </div>
                 )}
@@ -652,8 +824,8 @@ export default function ClassroomScanner() {
                     className="flex items-center justify-between p-3 bg-slate-50 border border-slate-100 rounded-xl text-xs"
                   >
                     <div>
-                      <div className="font-semibold text-slate-800">{rec.student.name}</div>
-                      <div className="text-slate-500 font-mono text-[10px]">{rec.student.rollNumber}</div>
+                      <div className="font-semibold text-slate-800">{rec.student?.name || 'Student'}</div>
+                      <div className="text-slate-500 font-mono text-[10px]">{rec.student?.rollNumber || 'Enrolled'}</div>
                     </div>
                     <div className="flex items-center gap-1.5 text-emerald-600 font-semibold text-[11px]">
                       <CheckCircle2 size={14} />
