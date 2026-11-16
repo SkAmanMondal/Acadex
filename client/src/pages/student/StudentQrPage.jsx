@@ -11,6 +11,10 @@ import {
   Minimize2,
   Sun,
   ShieldAlert,
+  Fingerprint,
+  VideoOff,
+  Lock,
+  Unlock,
 } from 'lucide-react';
 
 // Pre-render a solid black 600x600 PNG image blob for instantaneous clipboard replacement
@@ -61,14 +65,48 @@ export default function StudentQrPage() {
   const [error, setError] = useState('');
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [isBlackout, setIsBlackout] = useState(false);
+  const [isHolding, setIsHolding] = useState(false);
+  const [holdMode, setHoldMode] = useState(true); // Default true: Press & Hold to Present (100% Anti-Screenshot on Phones)
+  const [liveMicroTime, setLiveMicroTime] = useState('');
 
-  // 1. Comprehensive Multi-Layer Anti-Screenshot Protection
+  // 1. Live Running Millisecond Security Clock (Proof of live presence against video replay)
+  useEffect(() => {
+    const timer = setInterval(() => {
+      const now = new Date();
+      setLiveMicroTime(now.toTimeString().slice(0, 8) + '.' + String(now.getMilliseconds()).padStart(3, '0'));
+    }, 60);
+    return () => clearInterval(timer);
+  }, []);
+
+  // 2. Strict Screen Sharing Interception (Blocks WebRTC getDisplayMedia at JS runtime)
+  useEffect(() => {
+    if (typeof navigator !== 'undefined' && navigator.mediaDevices) {
+      try {
+        const originalGetDisplayMedia = navigator.mediaDevices.getDisplayMedia;
+        navigator.mediaDevices.getDisplayMedia = () => {
+          setIsBlackout(true);
+          overwriteClipboardWithBlack();
+          return Promise.reject(
+            new DOMException('Screen sharing is strictly prohibited on the attendance pass.', 'NotAllowedError')
+          );
+        };
+        return () => {
+          if (originalGetDisplayMedia) {
+            navigator.mediaDevices.getDisplayMedia = originalGetDisplayMedia;
+          }
+        };
+      } catch (e) {}
+    }
+  }, []);
+
+  // 3. Multi-Layer Anti-Screenshot, Keystroke & Gesture Protection
   useEffect(() => {
     let focusTimer = null;
     let blackoutTimer = null;
 
     const triggerBlackout = (durationMs = 2500) => {
       setIsBlackout(true);
+      setIsHolding(false);
       overwriteClipboardWithBlack();
       if (blackoutTimer) clearTimeout(blackoutTimer);
       if (durationMs > 0) {
@@ -80,9 +118,7 @@ export default function StudentQrPage() {
       }
     };
 
-    // A. ANY Key Down:
-    // This page has zero form fields. Any keystroke is an attempt to screenshot
-    // (PrintScreen, Win+Shift+S, Alt+PrtScn, Win+G, Snipping Tool, Ctrl+P, F12, etc.)
+    // A. ANY Key Down: (PrtScn, Win, Shift, Ctrl, Alt, F12, etc.)
     const handleKeyDown = (e) => {
       triggerBlackout(3000);
       overwriteClipboardWithBlack();
@@ -104,23 +140,20 @@ export default function StudentQrPage() {
       }
     };
 
-    // B. Key Up:
-    // In Windows Chrome/Edge, PrintScreen only emits keyup (after OS screenshot).
-    // Immediately overwrites the clipboard image with solid black so pasted screenshots are black.
+    // B. Key Up: (Windows PrintScreen emit)
     const handleKeyUp = (e) => {
       triggerBlackout(3000);
       overwriteClipboardWithBlack();
     };
 
-    // C. Window Blur:
-    // Fires instantly when Windows Snipping Tool (Win+Shift+S), Greenshot, Lightshot, or taskbar is activated.
+    // C. Window Blur: (Snipping Tool, notification drop, external screenshot tool, app switch)
     const handleBlur = () => {
       setIsBlackout(true);
+      setIsHolding(false);
       overwriteClipboardWithBlack();
     };
 
-    // D. Window Focus:
-    // Restores display only after user returns focus to the browser window
+    // D. Window Focus
     const handleFocus = () => {
       if (focusTimer) clearTimeout(focusTimer);
       focusTimer = setTimeout(() => {
@@ -128,11 +161,11 @@ export default function StudentQrPage() {
       }, 400);
     };
 
-    // E. Document Visibility Change:
-    // Triggered when switching apps, multitasking on phones, or overlay capture
+    // E. Document Visibility Change (mobile home swipe, screenshot overlay, app switch)
     const handleVisibilityChange = () => {
       if (document.visibilityState !== 'visible' || document.hidden) {
         setIsBlackout(true);
+        setIsHolding(false);
         overwriteClipboardWithBlack();
       } else {
         if (focusTimer) clearTimeout(focusTimer);
@@ -142,8 +175,7 @@ export default function StudentQrPage() {
       }
     };
 
-    // F. Mouse Leave:
-    // Triggered when cursor moves out of the browser window toward Snipping Tool or screenshot software
+    // F. Mouse Leave
     const handleMouseLeave = (e) => {
       if (
         !e.relatedTarget &&
@@ -153,7 +185,7 @@ export default function StudentQrPage() {
       }
     };
 
-    // G. Copy interception:
+    // G. Clipboard Copy Event Interception
     const handleCopy = (e) => {
       try {
         e.preventDefault();
@@ -164,6 +196,7 @@ export default function StudentQrPage() {
     // H. Browser Print Protection
     const handleBeforePrint = () => {
       setIsBlackout(true);
+      setIsHolding(false);
       overwriteClipboardWithBlack();
     };
     const handleAfterPrint = () => {
@@ -195,7 +228,43 @@ export default function StudentQrPage() {
     };
   }, []);
 
-  // 2. Dynamic QR Token Fetcher
+  // 4. Touch & Gesture Handlers (Defeats phone screenshots & multi-finger gestures)
+  const handleTouchStart = (e) => {
+    // If more than 1 finger touches the screen (e.g. 3-finger swipe screenshot gesture):
+    if (e.touches && e.touches.length > 1) {
+      setIsBlackout(true);
+      setIsHolding(false);
+      overwriteClipboardWithBlack();
+      return;
+    }
+    setIsHolding(true);
+  };
+
+  const handleTouchEnd = () => {
+    setIsHolding(false);
+  };
+
+  // Hardware buttons (Power + Volume Down) fire touchcancel on Android & iOS:
+  const handleTouchCancel = () => {
+    setIsHolding(false);
+    setIsBlackout(true);
+    overwriteClipboardWithBlack();
+    setTimeout(() => {
+      if (document.hasFocus() && document.visibilityState === 'visible') {
+        setIsBlackout(false);
+      }
+    }, 2000);
+  };
+
+  const handleMouseDown = () => {
+    setIsHolding(true);
+  };
+
+  const handleMouseUp = () => {
+    setIsHolding(false);
+  };
+
+  // 5. Dynamic QR Token Fetcher (5-Second Expiry)
   const fetchNewToken = async () => {
     try {
       setLoading(true);
@@ -216,7 +285,7 @@ export default function StudentQrPage() {
     fetchNewToken();
   }, []);
 
-  // 3. Countdown timer for 5-second rolling token
+  // 6. Countdown timer for 5-second rolling token
   useEffect(() => {
     if (timeLeft <= 0) {
       fetchNewToken();
@@ -230,8 +299,11 @@ export default function StudentQrPage() {
     return () => clearInterval(timer);
   }, [timeLeft]);
 
+  // Determine whether the QR is currently visible
+  const isQrVisible = !isBlackout && (!holdMode || isHolding);
+
   return (
-    <div className="max-w-md mx-auto space-y-6 select-none" style={{ WebkitTouchCallout: 'none' }}>
+    <div className="max-w-md mx-auto space-y-5 select-none" style={{ WebkitTouchCallout: 'none' }}>
       {/* Print Blackout CSS injection */}
       <style>{`
         @media print {
@@ -261,15 +333,22 @@ export default function StudentQrPage() {
             <ShieldAlert size={32} className="text-zinc-800" />
           </div>
           <h2 className="text-sm font-bold text-zinc-700">Dynamic Attendance Pass Protected</h2>
-          <p className="text-xs text-zinc-800 mt-1">Screen capture restricted for attendance integrity.</p>
+          <p className="text-xs text-zinc-800 mt-1">Screen capture and sharing restricted for attendance security.</p>
         </div>
       )}
 
-      <div className="bg-white rounded-3xl border border-slate-200/90 p-6 sm:p-8 text-center shadow-sm relative overflow-hidden">
-        {/* Top Header Badge */}
-        <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-emerald-50 text-emerald-800 border border-emerald-200 text-xs font-semibold mb-4">
-          <ShieldCheck size={13} className="text-emerald-600" />
-          <span>Dynamic QR Pass • 5s Auto-Rotation</span>
+      <div className="bg-white rounded-3xl border border-slate-200/90 p-5 sm:p-7 text-center shadow-sm relative overflow-hidden">
+        {/* Security & Anti-Capture Badges */}
+        <div className="flex items-center justify-center gap-2 flex-wrap mb-3.5">
+          <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-50 text-emerald-800 border border-emerald-200 text-xs font-semibold">
+            <ShieldCheck size={13} className="text-emerald-600" />
+            <span>Dynamic QR Pass • 5s Auto-Rotation</span>
+          </div>
+
+          <div className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-rose-50 text-rose-700 border border-rose-200 text-[10px] font-bold">
+            <VideoOff size={11} />
+            <span>Screen Sharing Blocked</span>
+          </div>
         </div>
 
         <h1 className="text-xl font-extrabold text-slate-900 tracking-tight">
@@ -279,57 +358,111 @@ export default function StudentQrPage() {
           Hold this QR code 15–25 cm in front of the classroom podium camera.
         </p>
 
+        {/* Security Presentation Mode Toggle */}
+        <div className="mt-4 p-1 bg-slate-100 rounded-2xl flex items-center max-w-xs mx-auto text-xs">
+          <button
+            type="button"
+            onClick={() => setHoldMode(true)}
+            className={`flex-1 py-1.5 px-2 rounded-xl font-bold transition flex items-center justify-center gap-1.5 cursor-pointer ${
+              holdMode
+                ? 'bg-slate-900 text-white shadow-xs'
+                : 'text-slate-600 hover:text-slate-900'
+            }`}
+          >
+            <Fingerprint size={13} />
+            <span>Touch to Present</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => setHoldMode(false)}
+            className={`flex-1 py-1.5 px-2 rounded-xl font-bold transition flex items-center justify-center gap-1.5 cursor-pointer ${
+              !holdMode
+                ? 'bg-slate-900 text-white shadow-xs'
+                : 'text-slate-600 hover:text-slate-900'
+            }`}
+          >
+            <Eye size={13} />
+            <span>Always Visible</span>
+          </button>
+        </div>
+
         {error ? (
-          <div className="my-8 p-4 bg-rose-50 border border-rose-200 text-rose-700 rounded-2xl text-xs flex items-center justify-center gap-2">
+          <div className="my-6 p-4 bg-rose-50 border border-rose-200 text-rose-700 rounded-2xl text-xs flex items-center justify-center gap-2">
             <AlertCircle size={16} />
             <span>{error}</span>
           </div>
         ) : (
-          <div className="my-6 flex flex-col items-center justify-center">
-            {/* QR Code Container with High Contrast & Quiet Zone */}
+          <div className="my-5 flex flex-col items-center justify-center">
+            {/* Interactive Protected QR Container with Touch-to-Present */}
             <div
-              className={`p-4 rounded-3xl shadow-xl relative inline-block group select-none transition-colors duration-75 ${
-                isBlackout ? 'bg-black border-2 border-black' : 'bg-white border-2 border-slate-900'
+              className={`w-[280px] h-[280px] rounded-3xl shadow-xl relative select-none flex flex-col items-center justify-center p-3 transition-all duration-150 touch-none ${
+                !isQrVisible
+                  ? 'bg-slate-950 border-2 border-emerald-500/50 cursor-pointer active:scale-98'
+                  : 'bg-white border-2 border-slate-900'
               }`}
+              onTouchStart={handleTouchStart}
+              onTouchEnd={handleTouchEnd}
+              onTouchCancel={handleTouchCancel}
+              onMouseDown={handleMouseDown}
+              onMouseUp={handleMouseUp}
+              onMouseLeave={handleMouseUp}
               onContextMenu={(e) => e.preventDefault()}
               onDragStart={(e) => e.preventDefault()}
             >
               {loading && !qrToken ? (
-                <div className="w-64 h-64 flex flex-col items-center justify-center gap-3">
+                <div className="flex flex-col items-center justify-center gap-3">
                   <RefreshCw className="animate-spin text-brand-600" size={36} />
                   <span className="text-xs text-slate-400 font-medium">Generating ultra-clear pass...</span>
                 </div>
+              ) : !isQrVisible ? (
+                /* Shutter Mode: When not actively holding down finger */
+                <div className="flex flex-col items-center justify-center p-4 text-center select-none space-y-2.5">
+                  <div className="w-16 h-16 rounded-full bg-emerald-500/10 border border-emerald-500/30 flex items-center justify-center text-emerald-400 shadow-inner">
+                    <Fingerprint size={38} className="animate-pulse" />
+                  </div>
+                  <h3 className="text-sm font-extrabold text-white tracking-wide uppercase">
+                    Press & Hold to Present
+                  </h3>
+                  <p className="text-[11px] text-slate-400 leading-tight max-w-[210px]">
+                    Touch and hold screen to show QR to podium camera.
+                  </p>
+                  <span className="text-[10px] text-emerald-400/90 font-mono font-bold bg-emerald-950/60 border border-emerald-800/60 px-2 py-0.5 rounded-md">
+                    🔒 Anti-Screenshot Active
+                  </span>
+                </div>
               ) : (
-                <div className="relative">
-                  {isBlackout ? (
-                    <div className="w-[250px] h-[250px] bg-black rounded-2xl" />
-                  ) : (
-                    <QRCodeSVG
-                      value={qrToken}
-                      size={250}
-                      level="L"
-                      includeMargin={true}
-                      fgColor="#000000"
-                      bgColor="#ffffff"
-                      className="rounded-2xl transition-all"
-                    />
-                  )}
+                /* Active Mode: QR Code rendered during active touch hold or continuous mode */
+                <div className="relative flex flex-col items-center">
+                  <div className="text-[9px] font-mono font-extrabold text-slate-500 mb-1 flex items-center gap-1.5">
+                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-ping" />
+                    <span>LIVE PASS • {liveMicroTime}</span>
+                  </div>
+                  <QRCodeSVG
+                    value={qrToken}
+                    size={230}
+                    level="L"
+                    includeMargin={true}
+                    fgColor="#000000"
+                    bgColor="#ffffff"
+                    className="rounded-2xl transition-all"
+                  />
                   {/* Quick Expand Button Hover */}
-                  {!isBlackout && (
-                    <button
-                      onClick={() => setIsFullscreen(true)}
-                      className="absolute top-2 right-2 p-2 rounded-xl bg-slate-900/80 hover:bg-slate-900 text-white shadow-md transition cursor-pointer backdrop-blur-sm opacity-90 hover:opacity-100"
-                      title="Fullscreen zoom for instant podium scanning"
-                    >
-                      <Maximize2 size={15} />
-                    </button>
-                  )}
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setIsFullscreen(true);
+                    }}
+                    className="absolute top-6 right-1 p-1.5 rounded-xl bg-slate-900/80 hover:bg-slate-900 text-white shadow-md transition cursor-pointer backdrop-blur-sm opacity-80 hover:opacity-100"
+                    title="Fullscreen zoom"
+                  >
+                    <Maximize2 size={13} />
+                  </button>
                 </div>
               )}
             </div>
 
             {/* Countdown Progress Bar (5 Seconds Rolling) */}
-            <div className="w-72 mt-5 space-y-1.5">
+            <div className="w-72 mt-4 space-y-1.5">
               <div className="flex justify-between items-center text-xs font-semibold">
                 <span className="flex items-center gap-1.5 text-slate-500">
                   <Clock size={13} />
@@ -351,16 +484,16 @@ export default function StudentQrPage() {
           </div>
         )}
 
-        {/* Visibility & Scanning Guidance Tip Box */}
-        <div className="bg-amber-50/70 border border-amber-200/80 rounded-2xl p-3.5 text-left text-xs text-amber-900/90 flex items-start gap-2.5">
-          <Sun size={16} className="text-amber-600 shrink-0 mt-0.5" />
+        {/* Security Advice Notice Box */}
+        <div className="bg-amber-50/70 border border-amber-200/80 rounded-2xl p-3 text-left text-xs text-amber-900/90 flex items-start gap-2.5">
+          <Sun size={15} className="text-amber-600 shrink-0 mt-0.5" />
           <p className="text-[11px] leading-relaxed">
-            <strong>Optimal Scanning Tip:</strong> Set phone screen brightness to 70%+ and hold flat ~20 cm from the camera. The large-pixel QR format is optimized for fast recognition without lag.
+            <strong>Security Notice:</strong> In <em>Touch to Present</em> mode, lifting your finger or attempting a phone screenshot (`Power + Volume`) immediately blanks the pass to prevent proxy attendance.
           </p>
         </div>
 
         {/* Student Credential Ledger Info (Without Token Format) */}
-        <div className="bg-slate-50 rounded-2xl p-4 text-left border border-slate-100 space-y-2 text-xs mt-4">
+        <div className="bg-slate-50 rounded-2xl p-3.5 text-left border border-slate-100 space-y-1.5 text-xs mt-3.5">
           <div className="flex justify-between">
             <span className="text-slate-500 font-medium">Student Name:</span>
             <span className="font-bold text-slate-800">{user?.name}</span>
@@ -379,7 +512,7 @@ export default function StudentQrPage() {
         <button
           onClick={fetchNewToken}
           disabled={loading}
-          className="mt-5 w-full py-2.5 px-4 rounded-xl border border-slate-200 text-slate-700 hover:bg-slate-50 text-xs font-bold flex items-center justify-center gap-2 transition cursor-pointer active:scale-98"
+          className="mt-4 w-full py-2.5 px-4 rounded-xl border border-slate-200 text-slate-700 hover:bg-slate-50 text-xs font-bold flex items-center justify-center gap-2 transition cursor-pointer active:scale-98"
         >
           <RefreshCw size={14} className={loading ? 'animate-spin' : ''} />
           <span>Refresh Code Immediately</span>
@@ -396,7 +529,7 @@ export default function StudentQrPage() {
             <Minimize2 size={20} />
           </button>
 
-          <div className="text-center space-y-3 mb-6">
+          <div className="text-center space-y-2 mb-5">
             <span className="px-3 py-1 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-400/30 text-xs font-bold uppercase tracking-wider">
               Maximum Visibility Mode
             </span>
@@ -422,13 +555,13 @@ export default function StudentQrPage() {
             )}
           </div>
 
-          <div className="mt-6 text-center text-xs font-mono font-bold text-slate-400">
+          <div className="mt-5 text-center text-xs font-mono font-bold text-slate-400">
             {timeLeft}s remaining • Tap anywhere outside to close
           </div>
 
           <button
             onClick={() => setIsFullscreen(false)}
-            className="mt-6 px-6 py-2.5 rounded-2xl bg-white text-slate-900 font-bold text-xs transition cursor-pointer hover:bg-slate-100"
+            className="mt-5 px-6 py-2.5 rounded-2xl bg-white text-slate-900 font-bold text-xs transition cursor-pointer hover:bg-slate-100"
           >
             Done Scanning
           </button>

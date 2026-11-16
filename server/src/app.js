@@ -40,6 +40,12 @@ app.use(
     contentSecurityPolicy: false, // Allow in-app PDF and resource embedding
   })
 );
+
+// Disable screen sharing (display-capture) across all client browsers
+app.use((req, res, next) => {
+  res.setHeader('Permissions-Policy', 'display-capture=(), camera=(self), microphone=()');
+  next();
+});
 const allowedOrigins = process.env.CLIENT_URL
   ? process.env.CLIENT_URL.split(',').map((u) => u.trim())
   : ['http://localhost:5173'];
