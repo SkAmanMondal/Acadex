@@ -11,10 +11,7 @@ import {
   Minimize2,
   Sun,
   ShieldAlert,
-  Fingerprint,
   VideoOff,
-  Lock,
-  Unlock,
 } from 'lucide-react';
 
 // Pre-render a solid black 600x600 PNG image blob for instantaneous clipboard replacement
@@ -65,7 +62,6 @@ export default function StudentQrPage() {
   const [error, setError] = useState('');
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [isBlackout, setIsBlackout] = useState(false);
-  const [isHolding, setIsHolding] = useState(false);
   const [liveMicroTime, setLiveMicroTime] = useState('');
 
   // 1. Live Running Millisecond Security Clock (Proof of live presence against video replay)
@@ -105,7 +101,6 @@ export default function StudentQrPage() {
 
     const triggerBlackout = (durationMs = 2500) => {
       setIsBlackout(true);
-      setIsHolding(false);
       overwriteClipboardWithBlack();
       if (blackoutTimer) clearTimeout(blackoutTimer);
       if (durationMs > 0) {
@@ -148,7 +143,6 @@ export default function StudentQrPage() {
     // C. Window Blur: (Snipping Tool, notification drop, external screenshot tool, app switch)
     const handleBlur = () => {
       setIsBlackout(true);
-      setIsHolding(false);
       overwriteClipboardWithBlack();
     };
 
@@ -164,7 +158,6 @@ export default function StudentQrPage() {
     const handleVisibilityChange = () => {
       if (document.visibilityState !== 'visible' || document.hidden) {
         setIsBlackout(true);
-        setIsHolding(false);
         overwriteClipboardWithBlack();
       } else {
         if (focusTimer) clearTimeout(focusTimer);
@@ -195,7 +188,6 @@ export default function StudentQrPage() {
     // H. Browser Print Protection
     const handleBeforePrint = () => {
       setIsBlackout(true);
-      setIsHolding(false);
       overwriteClipboardWithBlack();
     };
     const handleAfterPrint = () => {
@@ -227,43 +219,7 @@ export default function StudentQrPage() {
     };
   }, []);
 
-  // 4. Touch & Gesture Handlers (Defeats phone screenshots & multi-finger gestures)
-  const handleTouchStart = (e) => {
-    // If more than 1 finger touches the screen (e.g. 3-finger swipe screenshot gesture):
-    if (e.touches && e.touches.length > 1) {
-      setIsBlackout(true);
-      setIsHolding(false);
-      overwriteClipboardWithBlack();
-      return;
-    }
-    setIsHolding(true);
-  };
-
-  const handleTouchEnd = () => {
-    setIsHolding(false);
-  };
-
-  // Hardware buttons (Power + Volume Down) fire touchcancel on Android & iOS:
-  const handleTouchCancel = () => {
-    setIsHolding(false);
-    setIsBlackout(true);
-    overwriteClipboardWithBlack();
-    setTimeout(() => {
-      if (document.hasFocus() && document.visibilityState === 'visible') {
-        setIsBlackout(false);
-      }
-    }, 2000);
-  };
-
-  const handleMouseDown = () => {
-    setIsHolding(true);
-  };
-
-  const handleMouseUp = () => {
-    setIsHolding(false);
-  };
-
-  // 5. Dynamic QR Token Fetcher (5-Second Expiry)
+  // 4. Dynamic QR Token Fetcher (5-Second Expiry)
   const fetchNewToken = async () => {
     try {
       setLoading(true);
@@ -284,7 +240,7 @@ export default function StudentQrPage() {
     fetchNewToken();
   }, []);
 
-  // 6. Countdown timer for 5-second rolling token
+  // 5. Countdown timer for 5-second rolling token
   useEffect(() => {
     if (timeLeft <= 0) {
       fetchNewToken();
@@ -298,8 +254,8 @@ export default function StudentQrPage() {
     return () => clearInterval(timer);
   }, [timeLeft]);
 
-  // Determine whether the QR is currently visible (Strictly enforced: only during active hold & no blackout)
-  const isQrVisible = !isBlackout && isHolding;
+  // Determine whether the QR is currently visible
+  const isQrVisible = !isBlackout;
 
   return (
     <div className="max-w-md mx-auto space-y-5 select-none" style={{ WebkitTouchCallout: 'none' }}>
@@ -357,20 +313,6 @@ export default function StudentQrPage() {
           Hold this QR code 15–25 cm in front of the classroom podium camera.
         </p>
 
-        {/* Anti-Proxy Hardware & Screen Shutter Shield */}
-        <div className="mt-4 px-3 py-2 bg-slate-900 text-slate-100 rounded-2xl flex items-center justify-between max-w-xs mx-auto text-xs shadow-xs border border-slate-800 select-none">
-          <div className="flex items-center gap-2">
-            <Fingerprint size={16} className="text-emerald-400 animate-pulse" />
-            <div className="text-left">
-              <div className="font-bold text-[11px] text-white">Biometric Touch Shutter</div>
-              <div className="text-[10px] text-slate-400">Press & hold to reveal pass</div>
-            </div>
-          </div>
-          <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-emerald-950 text-emerald-400 border border-emerald-800/80 font-bold">
-            ENFORCED
-          </span>
-        </div>
-
         {error ? (
           <div className="my-6 p-4 bg-rose-50 border border-rose-200 text-rose-700 rounded-2xl text-xs flex items-center justify-center gap-2">
             <AlertCircle size={16} />
@@ -378,19 +320,9 @@ export default function StudentQrPage() {
           </div>
         ) : (
           <div className="my-5 flex flex-col items-center justify-center">
-            {/* Interactive Protected QR Container with Touch-to-Present */}
+            {/* Clean QR Display Container */}
             <div
-              className={`w-[280px] h-[280px] rounded-3xl shadow-xl relative select-none flex flex-col items-center justify-center p-3 transition-all duration-150 touch-none ${
-                !isQrVisible
-                  ? 'bg-slate-950 border-2 border-emerald-500/50 cursor-pointer active:scale-98'
-                  : 'bg-white border-2 border-slate-900'
-              }`}
-              onTouchStart={handleTouchStart}
-              onTouchEnd={handleTouchEnd}
-              onTouchCancel={handleTouchCancel}
-              onMouseDown={handleMouseDown}
-              onMouseUp={handleMouseUp}
-              onMouseLeave={handleMouseUp}
+              className="w-[280px] h-[280px] rounded-3xl shadow-lg border-2 border-slate-900/10 bg-white relative select-none flex flex-col items-center justify-center p-3 transition-all duration-150"
               onContextMenu={(e) => e.preventDefault()}
               onDragStart={(e) => e.preventDefault()}
             >
@@ -399,24 +331,11 @@ export default function StudentQrPage() {
                   <RefreshCw className="animate-spin text-brand-600" size={36} />
                   <span className="text-xs text-slate-400 font-medium">Generating ultra-clear pass...</span>
                 </div>
-              ) : !isQrVisible ? (
-                /* Shutter Mode: When not actively holding down finger */
-                <div className="flex flex-col items-center justify-center p-4 text-center select-none space-y-2.5">
-                  <div className="w-16 h-16 rounded-full bg-emerald-500/10 border border-emerald-500/30 flex items-center justify-center text-emerald-400 shadow-inner">
-                    <Fingerprint size={38} className="animate-pulse" />
-                  </div>
-                  <h3 className="text-sm font-extrabold text-white tracking-wide uppercase">
-                    Press & Hold to Present
-                  </h3>
-                  <p className="text-[11px] text-slate-400 leading-tight max-w-[210px]">
-                    Touch and hold screen to show QR to podium camera.
-                  </p>
-                  <span className="text-[10px] text-emerald-400/90 font-mono font-bold bg-emerald-950/60 border border-emerald-800/60 px-2 py-0.5 rounded-md">
-                    🔒 Anti-Screenshot Active
-                  </span>
+              ) : isBlackout ? (
+                <div className="w-full h-full bg-black rounded-2xl flex flex-col items-center justify-center p-4 text-center">
+                  <span className="text-xs font-bold text-zinc-600">PASS PROTECTED</span>
                 </div>
               ) : (
-                /* Active Mode: QR Code rendered during active touch hold or continuous mode */
                 <div className="relative flex flex-col items-center">
                   <div className="text-[9px] font-mono font-extrabold text-slate-500 mb-1 flex items-center gap-1.5">
                     <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-ping" />
@@ -473,7 +392,7 @@ export default function StudentQrPage() {
         <div className="bg-amber-50/70 border border-amber-200/80 rounded-2xl p-3 text-left text-xs text-amber-900/90 flex items-start gap-2.5">
           <Sun size={15} className="text-amber-600 shrink-0 mt-0.5" />
           <p className="text-[11px] leading-relaxed">
-            <strong>Security Notice:</strong> Biometric Touch Shutter is enforced. Lifting your finger, multi-touch gestures, switching apps, taking screenshots, or screen sharing immediately blacks out the pass to prevent proxy attendance.
+            <strong>Optimal Scanning Tip:</strong> Set phone screen brightness to 70%+ and hold flat ~20 cm from the podium camera. The dynamic QR pass updates every 5 seconds for security.
           </p>
         </div>
 
@@ -522,26 +441,13 @@ export default function StudentQrPage() {
           </div>
 
           <div
-            className={`p-6 rounded-3xl shadow-2xl border-4 select-none transition-all touch-none ${
-              !isQrVisible ? 'bg-black border-zinc-800' : 'bg-white border-slate-800'
-            }`}
-            onTouchStart={handleTouchStart}
-            onTouchEnd={handleTouchEnd}
-            onTouchCancel={handleTouchCancel}
-            onMouseDown={handleMouseDown}
-            onMouseUp={handleMouseUp}
+            className="p-6 bg-white rounded-3xl shadow-2xl border-4 border-slate-800 select-none relative"
             onContextMenu={(e) => e.preventDefault()}
             onDragStart={(e) => e.preventDefault()}
           >
-            {!isQrVisible ? (
-              <div className="w-[300px] h-[300px] bg-black rounded-2xl flex flex-col items-center justify-center p-4 text-center select-none">
-                <Fingerprint size={52} className="text-emerald-400 animate-pulse mb-3" />
-                <span className="text-sm font-extrabold text-white uppercase tracking-wider">
-                  Touch & Hold to Reveal
-                </span>
-                <span className="text-xs text-slate-400 mt-1">
-                  Release to instantly blackout
-                </span>
+            {isBlackout ? (
+              <div className="w-[300px] h-[300px] bg-black rounded-2xl flex items-center justify-center">
+                <span className="text-xs font-bold text-zinc-600">PASS PROTECTED</span>
               </div>
             ) : (
               <QRCodeSVG
