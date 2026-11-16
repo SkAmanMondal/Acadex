@@ -333,6 +333,28 @@ export const getKioskSession = async (req, res) => {
       ? Math.max(0, Math.floor((session.expiresAt - new Date()) / 1000))
       : (session.durationMinutes || 10) * 60;
 
+    // Fetch existing present records for this active session (if any)
+    const records = await AttendanceRecord.find({ session: session._id, status: 'present' })
+      .populate('student', 'name email avatar')
+      .sort({ scannedAt: -1 })
+      .lean();
+
+    const studentUserIds = records.map((r) => r.student?._id).filter(Boolean);
+    const profiles = await StudentProfile.find({ user: { $in: studentUserIds } }).select('user rollNumber').lean();
+    const profileMap = new Map();
+    profiles.forEach((p) => profileMap.set(p.user.toString(), p.rollNumber));
+
+    const populatedRecords = records.map((r) => ({
+      _id: r._id,
+      scannedAt: r.scannedAt,
+      student: {
+        _id: r.student?._id,
+        name: r.student?.name || 'Student',
+        email: r.student?.email,
+        rollNumber: profileMap.get(r.student?._id?.toString()) || 'Student',
+      },
+    }));
+
     return sendSuccess(res, 'Classroom session linked successfully', {
       session: {
         _id: session._id,
@@ -348,6 +370,7 @@ export const getKioskSession = async (req, res) => {
       },
       remainingSeconds,
       justActivated,
+      scannedRecords: populatedRecords,
     });
   } catch (err) {
     return sendError(res, err.message, 500);

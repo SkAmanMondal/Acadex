@@ -13,8 +13,6 @@ import {
   Play,
   Square,
   RefreshCw,
-  Upload,
-  Keyboard,
   ShieldAlert,
   Info,
   ArrowUpRight,
@@ -36,16 +34,10 @@ export default function ClassroomScanner() {
   // Available camera devices & facing mode
   const [cameras, setCameras] = useState([]);
   const [selectedCameraId, setSelectedCameraId] = useState('');
-  const [facingMode, setFacingMode] = useState('environment'); // 'environment' (rear camera) | 'user' (selfie camera)
-
-  // Fallback modes
-  const [activeTab, setActiveTab] = useState('webcam'); // 'webcam' | 'upload' | 'manual'
-  const [manualToken, setManualToken] = useState('');
-  const [isProcessingToken, setIsProcessingToken] = useState(false);
+  const [facingMode, setFacingMode] = useState('user'); // Always first open front camera ('user')
 
   const html5QrCodeRef = useRef(null);
   const lastScannedTokenRef = useRef('');
-  const fileInputRef = useRef(null);
 
   // Web Audio feedback generator
   const playBeep = (freq = 880, duration = 0.15) => {
@@ -181,8 +173,10 @@ export default function ClassroomScanner() {
         throw new Error('Your browser does not support camera access (mediaDevices API missing).');
       }
 
-      // 1. Explicitly prompt user for permission
-      const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+      // 1. Explicitly prompt user for permission prioritizing front camera
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: 'user' },
+      });
       // Stop temp stream tracks immediately
       stream.getTracks().forEach((track) => track.stop());
 
@@ -190,19 +184,31 @@ export default function ClassroomScanner() {
       const devices = await Html5Qrcode.getCameras();
       if (devices && devices.length > 0) {
         setCameras(devices);
-        setSelectedCameraId(devices[0].id);
-        return devices[0].id;
+        const frontCam = devices.find((d) => /front|user|selfie|face/i.test(d.label));
+        const chosenId = frontCam ? frontCam.id : devices[0].id;
+        setSelectedCameraId(chosenId);
+        return chosenId;
       } else {
-        throw new Error('No video input hardware detected on this machine.');
+        return null;
       }
     } catch (err) {
       console.warn('Camera permission / detection error:', err);
       setPermissionDenied(true);
-      setError(
-        err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError'
-          ? 'Camera permission was denied. Please allow camera access in your browser address bar.'
-          : err.message || 'Unable to access camera.'
-      );
+      const isDenied =
+        err?.name === 'NotAllowedError' ||
+        err?.name === 'PermissionDeniedError' ||
+        /denied|permission/i.test(err?.message || '');
+      const isInUse =
+        err?.name === 'NotReadableError' ||
+        /could not start video source|in use|already/i.test(err?.message || '');
+
+      if (isDenied) {
+        setError('Camera permission was denied in your browser. Please allow camera access in your browser address bar.');
+      } else if (isInUse) {
+        setError('Webcam is currently in use by another tab or program (e.g. Podium Kiosk).');
+      } else {
+        setError(err.message || 'Unable to access camera.');
+      }
       return null;
     }
   };
@@ -260,7 +266,6 @@ export default function ClassroomScanner() {
       lastScannedTokenRef.current = '';
     }, 3000);
 
-    setIsProcessingToken(true);
     try {
       const scanRes = await api.post(`/attendance/session/${sessionId}/scan`, { qrToken: decodedText });
       if (scanRes.data?.success) {
@@ -271,7 +276,6 @@ export default function ClassroomScanner() {
           message: `Attendance Recorded: ${record.student.name} (${record.student.rollNumber})`,
         });
         setScannedRecords((prev) => [record, ...prev]);
-        setManualToken('');
       }
     } catch (scanErr) {
       const status = scanErr.response?.status;
@@ -298,8 +302,6 @@ export default function ClassroomScanner() {
           message: msg,
         });
       }
-    } finally {
-      setIsProcessingToken(false);
     }
   };
 
@@ -311,7 +313,7 @@ export default function ClassroomScanner() {
 
       // Wait for #qr-reader element to be mounted in the DOM
       let attempts = 0;
-      while (!document.getElementById('qr-reader') && attempts < 15) {
+      while (!document.getElementById('qr-reader') && attempts < 25) {
         await new Promise((resolve) => setTimeout(resolve, 60));
         attempts++;
       }
@@ -322,7 +324,9 @@ export default function ClassroomScanner() {
 
       if (html5QrCodeRef.current) {
         try {
-          await html5QrCodeRef.current.stop();
+          if (html5QrCodeRef.current.isScanning) {
+            await html5QrCodeRef.current.stop();
+          }
           html5QrCodeRef.current.clear();
         } catch (e) {}
       }
@@ -334,7 +338,7 @@ export default function ClassroomScanner() {
       });
       html5QrCodeRef.current = html5QrCode;
 
-      // Determine camera config: string deviceId or facingMode object (defaulting to rear camera)
+      // Determine camera config: string deviceId or facingMode object (FRONT CAMERA FIRST)
       let cameraConfig;
       if (typeof cameraIdOrConfig === 'string' && cameraIdOrConfig) {
         cameraConfig = cameraIdOrConfig;
@@ -343,7 +347,7 @@ export default function ClassroomScanner() {
       } else if (selectedCameraId) {
         cameraConfig = selectedCameraId;
       } else {
-        cameraConfig = { facingMode: { ideal: facingMode } };
+        cameraConfig = { facingMode: facingMode };
       }
 
       const qrboxFunction = (viewfinderWidth, viewfinderHeight) => {
@@ -352,52 +356,107 @@ export default function ClassroomScanner() {
         return { width: qrboxSize, height: qrboxSize };
       };
 
-      await html5QrCode.start(
-        cameraConfig,
-        {
-          fps: 25,
-          qrbox: qrboxFunction,
-          aspectRatio: 1.777778,
-        },
-        (decodedText) => {
-          handleProcessQrToken(decodedText, sessionId);
-        },
-        () => {
-          // Normal frame scan tick
+      try {
+        await html5QrCode.start(
+          cameraConfig,
+          {
+            fps: 25,
+            qrbox: qrboxFunction,
+            aspectRatio: 1.777778,
+          },
+          (decodedText) => {
+            handleProcessQrToken(decodedText, sessionId);
+          },
+          () => {}
+        );
+      } catch (firstErr) {
+        console.warn('Initial camera start failed, retrying with fallback:', firstErr);
+        if (cameraConfig && typeof cameraConfig === 'object') {
+          await html5QrCode.start(
+            { facingMode: facingMode === 'user' ? 'environment' : 'user' },
+            {
+              fps: 25,
+              qrbox: qrboxFunction,
+              aspectRatio: 1.777778,
+            },
+            (decodedText) => {
+              handleProcessQrToken(decodedText, sessionId);
+            },
+            () => {}
+          );
+        } else {
+          throw firstErr;
         }
-      );
+      }
+
       setIsScanning(true);
+
+      // Query available cameras in background after stream starts
+      if (cameras.length === 0) {
+        try {
+          const devices = await Html5Qrcode.getCameras();
+          if (devices && devices.length > 0) {
+            setCameras(devices);
+          }
+        } catch (e) {}
+      }
     } catch (camErr) {
       console.error('Webcam start failed:', camErr);
       setPermissionDenied(true);
-      setError('Unable to activate video stream. Please grant camera permission or use the flip/fallback options below.');
+      const isDenied =
+        camErr?.name === 'NotAllowedError' ||
+        camErr?.name === 'PermissionDeniedError' ||
+        /denied|permission/i.test(camErr?.message || '');
+      const isInUse =
+        camErr?.name === 'NotReadableError' ||
+        /could not start video source|in use|already/i.test(camErr?.message || '');
+
+      if (isDenied) {
+        setError('Camera permission was denied in your browser. Please allow camera access in the address bar.');
+      } else if (isInUse) {
+        setError('Webcam is currently in use by another tab or program (e.g. Podium Kiosk). Stop camera in the other tab or click "Start Camera Now".');
+      } else {
+        setError(camErr?.message || 'Unable to activate video stream. Please grant camera permission or use the flip/fallback options.');
+      }
       setIsScanning(false);
     }
   };
 
-  // Flip Camera between Rear (Environment) and Front (User)
+  // Flip Camera between Front (User) and Rear (Environment)
   const handleFlipCamera = async () => {
     if (!activeSession) return;
-    const newMode = facingMode === 'environment' ? 'user' : 'environment';
+    const newMode = facingMode === 'user' ? 'environment' : 'user';
     setFacingMode(newMode);
 
     await stopScanner();
 
-    // If multiple cameras enumerated in the device list, cycle to the next device ID
     if (cameras.length > 1) {
+      const targetCam = cameras.find((c) =>
+        newMode === 'user'
+          ? /front|user|selfie|face/i.test(c.label)
+          : /back|rear|environment/i.test(c.label)
+      );
+
+      if (targetCam) {
+        setSelectedCameraId(targetCam.id);
+        await startWebcam(activeSession._id, targetCam.id);
+        return;
+      }
+
       const currIdx = cameras.findIndex((c) => c.id === selectedCameraId);
       const nextIdx = (currIdx + 1) % cameras.length;
       const nextCamera = cameras[nextIdx];
       setSelectedCameraId(nextCamera.id);
       await startWebcam(activeSession._id, nextCamera.id);
     } else {
-      await startWebcam(activeSession._id, { facingMode: { ideal: newMode } });
+      setSelectedCameraId('');
+      await startWebcam(activeSession._id, { facingMode: newMode });
     }
   };
 
-  // Auto-start webcam whenever an active session is loaded and webcam tab is selected
+  // Auto-start webcam whenever an active session is loaded
   useEffect(() => {
-    if (!activeSession?._id || activeTab !== 'webcam') return;
+    if (!activeSession?._id) return;
 
     let isMounted = true;
     const autoInitTimer = setTimeout(async () => {
@@ -407,7 +466,7 @@ export default function ClassroomScanner() {
           camId = await requestCameraPermissionAndDiscover();
         }
         if (isMounted && activeSession?._id) {
-          startWebcam(activeSession._id, camId || { facingMode: { ideal: facingMode } });
+          startWebcam(activeSession._id, camId || { facingMode: facingMode });
         }
       } catch (e) {
         console.warn('Auto webcam start error:', e);
@@ -418,7 +477,7 @@ export default function ClassroomScanner() {
       isMounted = false;
       clearTimeout(autoInitTimer);
     };
-  }, [activeSession?._id, activeTab]);
+  }, [activeSession?._id]);
 
   const stopScanner = async () => {
     if (html5QrCodeRef.current) {
@@ -432,23 +491,6 @@ export default function ClassroomScanner() {
     setIsScanning(false);
   };
 
-  // Image File QR Scanner Fallback
-  const handleFileUploadScan = async (e) => {
-    const file = e.target.files[0];
-    if (!file || !activeSession) return;
-
-    try {
-      const html5QrCode = new Html5Qrcode('qr-file-reader');
-      const decodedText = await html5QrCode.scanFile(file, true);
-      handleProcessQrToken(decodedText, activeSession._id);
-    } catch (err) {
-      setScanFeedback({
-        type: 'error',
-        message: 'Could not detect a valid QR code in the uploaded image.',
-      });
-    }
-  };
-
   const formatTime = (secs) => {
     const mins = Math.floor(secs / 60);
     const s = secs % 60;
@@ -457,15 +499,12 @@ export default function ClassroomScanner() {
 
   return (
     <div className="space-y-6">
-      {/* Hidden element for file-based QR decoding */}
-      <div id="qr-file-reader" className="hidden" />
-
       {/* Header Banner */}
       <div className="bg-white rounded-3xl border border-slate-200 p-6 shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
           <h1 className="text-xl font-bold text-slate-800">Classroom Attendance Scanner</h1>
           <p className="text-xs text-slate-500 mt-1">
-            Activate the scheduled class session. Use the classroom webcam, upload a QR pass screenshot, or enter the code.
+            Activate the scheduled class session and scan student dynamic QR passes using the camera.
           </p>
         </div>
 
@@ -506,7 +545,7 @@ export default function ClassroomScanner() {
             </div>
           </div>
 
-          <div className="flex flex-wrap gap-2 pt-2 border-t border-amber-200/60">
+          <div className="pt-2 border-t border-amber-200/60">
             <button
               onClick={async () => {
                 const camId = await requestCameraPermissionAndDiscover();
@@ -518,12 +557,6 @@ export default function ClassroomScanner() {
             >
               <RefreshCw size={14} />
               <span>Grant Camera Permission & Start</span>
-            </button>
-            <button
-              onClick={() => setActiveTab('manual')}
-              className="px-4 py-2 bg-white hover:bg-slate-50 text-slate-700 border border-slate-300 rounded-xl text-xs font-semibold cursor-pointer transition"
-            >
-              Use Manual / Image QR Fallback Instead
             </button>
           </div>
         </div>
@@ -591,179 +624,103 @@ export default function ClassroomScanner() {
                         {activeSession.sessionCode}
                       </div>
                     </div>
-                    <a
-                      href={`/kiosk?code=${activeSession.sessionCode}`}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 transition shadow-md shadow-blue-500/25 cursor-pointer"
-                    >
-                      <span>Open Podium Kiosk</span>
-                      <ArrowUpRight size={14} />
-                    </a>
+                    <div className="flex items-center gap-2">
+                      {isScanning && (
+                        <button
+                          type="button"
+                          onClick={stopScanner}
+                          className="px-3 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl text-xs font-semibold transition cursor-pointer border border-slate-700"
+                          title="Pause camera if you want to use the camera in Podium Kiosk on this computer"
+                        >
+                          Pause Teacher Camera
+                        </button>
+                      )}
+                      <a
+                        href={`/kiosk?code=${activeSession.sessionCode}`}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 transition shadow-md shadow-blue-500/25 cursor-pointer"
+                      >
+                        <span>Open Podium Kiosk</span>
+                        <ArrowUpRight size={14} />
+                      </a>
+                    </div>
                   </div>
                   <p className="text-[11px] text-slate-300 leading-relaxed border-t border-slate-800 pt-2">
                     Open <strong className="text-white">{typeof window !== 'undefined' ? window.location.origin : 'http://localhost:5173'}/kiosk?code={activeSession.sessionCode}</strong> on the classroom computer. The session code <strong className="text-amber-300">{activeSession.sessionCode}</strong> is automatically integrated!
                   </p>
                 </div>
 
-                {/* Method Switcher Tabs */}
-                <div className="flex gap-2 border-b border-slate-100 pb-2 text-xs font-semibold">
-                  <button
-                    onClick={() => {
-                      setActiveTab('webcam');
-                      if (activeSession) {
-                        startWebcam(activeSession._id, selectedCameraId || { facingMode: { ideal: facingMode } });
-                      }
-                    }}
-                    className={`px-3 py-1.5 rounded-lg flex items-center gap-1.5 cursor-pointer transition shrink-0 ${
-                      activeTab === 'webcam'
-                        ? 'bg-blue-600 text-white shadow-sm'
-                        : 'text-slate-600 hover:bg-slate-100'
-                    }`}
-                  >
-                    <Camera size={14} className="w-3.5 h-3.5 shrink-0" strokeWidth={2.2} />
-                    <span>Live Webcam</span>
-                  </button>
-
-                  <button
-                    onClick={() => {
-                      stopScanner();
-                      setActiveTab('upload');
-                    }}
-                    className={`px-3 py-1.5 rounded-lg flex items-center gap-1.5 cursor-pointer transition shrink-0 ${
-                      activeTab === 'upload'
-                        ? 'bg-blue-600 text-white shadow-sm'
-                        : 'text-slate-600 hover:bg-slate-100'
-                    }`}
-                  >
-                    <Upload size={14} className="w-3.5 h-3.5 shrink-0" strokeWidth={2.2} />
-                    <span>Scan QR Image</span>
-                  </button>
-
-                  <button
-                    onClick={() => {
-                      stopScanner();
-                      setActiveTab('manual');
-                    }}
-                    className={`px-3 py-1.5 rounded-lg flex items-center gap-1.5 cursor-pointer transition shrink-0 ${
-                      activeTab === 'manual'
-                        ? 'bg-blue-600 text-white shadow-sm'
-                        : 'text-slate-600 hover:bg-slate-100'
-                    }`}
-                  >
-                    <Keyboard size={14} className="w-3.5 h-3.5 shrink-0" strokeWidth={2.2} />
-                    <span>Manual Code</span>
-                  </button>
-                </div>
-
-                {/* Tab 1: Live Webcam Feed */}
-                {activeTab === 'webcam' && (
-                  <div className="space-y-3">
-                    <div className="flex items-center justify-between flex-wrap gap-2 text-xs">
-                      <div className="flex items-center gap-2">
-                        {cameras.length > 1 && (
-                          <div className="flex items-center gap-1.5">
-                            <span className="text-slate-500 font-medium">Camera:</span>
-                            <select
-                              value={selectedCameraId}
-                              onChange={(e) => {
-                                setSelectedCameraId(e.target.value);
-                                startWebcam(activeSession._id, e.target.value);
-                              }}
-                              className="p-1.5 border border-slate-200 rounded-lg text-xs bg-slate-50 font-medium cursor-pointer"
-                            >
-                              {cameras.map((c) => (
-                                <option key={c.id} value={c.id}>
-                                  {c.label || `Camera ${c.id.substring(0, 5)}`}
-                                </option>
-                              ))}
-                            </select>
-                          </div>
-                        )}
-                      </div>
-
-                      {/* Flip Camera and Restart Controls */}
-                      <div className="flex items-center gap-2">
-                        <button
-                          type="button"
-                          onClick={handleFlipCamera}
-                          className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-800 rounded-lg font-bold text-xs flex items-center gap-1.5 transition cursor-pointer shadow-2xs border border-slate-200"
-                          title="Switch between front and rear cameras"
-                        >
-                          <SwitchCamera size={14} className="text-blue-600" />
-                          <span>Flip Camera ({facingMode === 'environment' ? 'Rear' : 'Front'})</span>
-                        </button>
-
-                        <button
-                          type="button"
-                          onClick={() => startWebcam(activeSession._id, selectedCameraId || { facingMode: { ideal: facingMode } })}
-                          className="px-2.5 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-xs font-semibold flex items-center gap-1 transition cursor-pointer border border-slate-200"
-                          title="Restart Camera"
-                        >
-                          <RefreshCw size={13} className={isScanning ? '' : 'text-amber-600 animate-spin'} />
-                          <span>Restart</span>
-                        </button>
-                      </div>
-                    </div>
-
-                    <div className="relative overflow-hidden rounded-2xl bg-black aspect-video flex items-center justify-center border border-slate-800 shadow-inner">
-                      <div id="qr-reader" className="w-full h-full" />
-                      {!isScanning && (
-                        <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/80 text-white p-4 text-center z-10">
-                          <Camera size={36} className="text-slate-400 mb-2 animate-pulse" />
-                          <p className="text-xs font-semibold text-slate-200">Camera Initializing...</p>
-                          <button
-                            type="button"
-                            onClick={() => startWebcam(activeSession._id, selectedCameraId || { facingMode: { ideal: facingMode } })}
-                            className="mt-3 px-3.5 py-1.5 bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold rounded-xl transition cursor-pointer"
+                {/* Live Camera Feed */}
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between flex-wrap gap-2 text-xs">
+                    <div className="flex items-center gap-2">
+                      <span className="font-semibold text-slate-700 flex items-center gap-1.5">
+                        <Camera size={14} className="text-blue-600" />
+                        <span>Live Camera Feed</span>
+                      </span>
+                      {cameras.length > 1 && (
+                        <div className="flex items-center gap-1.5 ml-2">
+                          <span className="text-slate-500 font-medium">Camera:</span>
+                          <select
+                            value={selectedCameraId}
+                            onChange={(e) => {
+                              setSelectedCameraId(e.target.value);
+                              startWebcam(activeSession._id, e.target.value);
+                            }}
+                            className="p-1.5 border border-slate-200 rounded-lg text-xs bg-slate-50 font-medium cursor-pointer"
                           >
-                            Start Camera Now
-                          </button>
+                            {cameras.map((c) => (
+                              <option key={c.id} value={c.id}>
+                                {c.label || `Camera ${c.id.substring(0, 5)}`}
+                              </option>
+                            ))}
+                          </select>
                         </div>
                       )}
                     </div>
-                  </div>
-                )}
 
-                {/* Tab 2: Upload QR Image Fallback */}
-                {activeTab === 'upload' && (
-                  <div className="p-8 border-2 border-dashed border-slate-200 rounded-2xl text-center space-y-3 bg-slate-50/50">
-                    <Upload size={32} className="mx-auto text-blue-600" />
-                    <div className="text-xs font-semibold text-slate-700">
-                      Upload or drag student QR code pass screenshot
+                    {/* Flip Camera and Restart Controls */}
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={handleFlipCamera}
+                        className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-800 rounded-lg font-bold text-xs flex items-center gap-1.5 transition cursor-pointer shadow-2xs border border-slate-200"
+                        title="Switch between front and rear cameras"
+                      >
+                        <SwitchCamera size={14} className="text-blue-600" />
+                        <span>Flip Camera ({facingMode === 'user' ? 'Front' : 'Back'})</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => startWebcam(activeSession._id, selectedCameraId || { facingMode: facingMode })}
+                        className="px-2.5 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-xs font-semibold flex items-center gap-1 transition cursor-pointer border border-slate-200"
+                        title="Restart Camera"
+                      >
+                        <RefreshCw size={13} className={isScanning ? '' : 'text-amber-600 animate-spin'} />
+                        <span>Restart</span>
+                      </button>
                     </div>
-                    <input
-                      type="file"
-                      ref={fileInputRef}
-                      accept="image/*"
-                      onChange={handleFileUploadScan}
-                      className="text-xs text-slate-500 file:mr-3 file:py-1.5 file:px-3 file:rounded-lg file:border-0 file:text-xs file:font-semibold file:bg-blue-50 file:text-blue-700 cursor-pointer"
-                    />
                   </div>
-                )}
 
-                {/* Tab 3: Manual Token Input Fallback */}
-                {activeTab === 'manual' && (
-                  <div className="space-y-3 p-4 bg-slate-50 rounded-2xl border border-slate-200 text-xs">
-                    <label className="block font-semibold text-slate-700">
-                      Paste Student Dynamic QR Token String
-                    </label>
-                    <textarea
-                      rows="3"
-                      value={manualToken}
-                      onChange={(e) => setManualToken(e.target.value)}
-                      placeholder="Paste base64 token string from student pass or scan with handheld scanner..."
-                      className="w-full p-2.5 font-mono text-[11px] bg-white border border-slate-200 rounded-xl"
-                    />
-                    <button
-                      onClick={() => handleProcessQrToken(manualToken.trim(), activeSession._id)}
-                      disabled={!manualToken.trim() || isProcessingToken}
-                      className="w-full py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-semibold text-xs flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-50"
-                    >
-                      <span>Process & Record Attendance</span>
-                    </button>
+                  <div className="relative overflow-hidden rounded-2xl bg-black aspect-video flex items-center justify-center border border-slate-800 shadow-inner">
+                    <div id="qr-reader" className="w-full h-full" />
+                    {!isScanning && (
+                      <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/80 text-white p-4 text-center z-10">
+                        <Camera size={36} className="text-slate-400 mb-2 animate-pulse" />
+                        <p className="text-xs font-semibold text-slate-200">Camera Initializing...</p>
+                        <button
+                          type="button"
+                          onClick={() => startWebcam(activeSession._id, selectedCameraId || { facingMode: facingMode })}
+                          className="mt-3 px-3.5 py-1.5 bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold rounded-xl transition cursor-pointer"
+                        >
+                          Start Camera Now
+                        </button>
+                      </div>
+                    )}
                   </div>
-                )}
+                </div>
 
                 {/* Scan Feedback Banner with Correlated Sound & Color */}
                 {scanFeedback && (

@@ -17,8 +17,7 @@ import {
   LogOut,
   Maximize2,
   Minimize2,
-  Keyboard,
-  Upload,
+  SwitchCamera,
 } from 'lucide-react';
 import { Link, useSearchParams } from 'react-router-dom';
 
@@ -37,8 +36,7 @@ export default function ClassroomKioskScanner() {
   // Hardware acceleration & camera selection
   const [cameras, setCameras] = useState([]);
   const [selectedCameraId, setSelectedCameraId] = useState('');
-  const [activeTab, setActiveTab] = useState('webcam'); // 'webcam' | 'manual'
-  const [manualToken, setManualToken] = useState('');
+  const [facingMode, setFacingMode] = useState('user'); // Always first open front camera
 
   const html5QrCodeRef = useRef(null);
   const lastScannedTokenRef = useRef('');
@@ -58,6 +56,34 @@ export default function ClassroomKioskScanner() {
       stopScanner();
       playTone(400, 0.35);
       setSessionEndedByTeacher(data);
+    });
+
+    // Listen for real-time student scans (from teacher scanner or student app)
+    newSocket.on('attendance_student_scanned', (data) => {
+      setScannedRecords((prev) => {
+        if (
+          prev.some(
+            (r) =>
+              r.student?._id?.toString() === data.student?._id?.toString() ||
+              (r.student?.rollNumber && r.student?.rollNumber === data.student?.rollNumber)
+          )
+        ) {
+          return prev;
+        }
+        return [
+          {
+            _id: data.recordId || Date.now().toString(),
+            student: data.student,
+            scannedAt: data.scannedAt || new Date(),
+          },
+          ...prev,
+        ];
+      });
+      playSuccessSound();
+      setScanFeedback({
+        type: 'success',
+        message: `Attendance Recorded: ${data.student?.name || 'Student'} (${data.student?.rollNumber || 'Enrolled'})`,
+      });
     });
 
     // Listen for teacher cancelling the session before activation
@@ -120,16 +146,13 @@ export default function ClassroomKioskScanner() {
       const cleanCode = rawCode.trim().toUpperCase();
       const res = await api.get(`/attendance/kiosk/session/${cleanCode}`);
       if (res.data?.success) {
-        const { session, remainingSeconds: remSec } = res.data.data;
+        const { session, remainingSeconds: remSec, scannedRecords: existingRecords } = res.data.data;
         setActiveSession(session);
         setRemainingSeconds(remSec);
-        setScannedRecords([]);
+        setScannedRecords(existingRecords || []);
 
         // Join socket room for this session
         socketRef.current?.emit('join_attendance_session', cleanCode);
-
-        // Discover camera and start
-        await startKioskCamera(session.sessionCode);
       }
     } catch (err) {
       setError(err.response?.data?.message || 'Invalid or expired session code');
@@ -175,7 +198,6 @@ export default function ClassroomKioskScanner() {
           message: `Attendance Recorded: ${record.student.name} (${record.student.rollNumber})`,
         });
         setScannedRecords((prev) => [record, ...prev]);
-        setManualToken('');
       }
     } catch (err) {
       const status = err.response?.status;
@@ -205,26 +227,42 @@ export default function ClassroomKioskScanner() {
     }
   };
 
-  const startKioskCamera = async (code) => {
+  const startKioskCamera = async (code, customCameraId) => {
     try {
       setIsScanning(true);
       setError('');
 
+      // 1. Wait for #kiosk-qr-reader to be mounted in the DOM
+      let attempts = 0;
+      while (!document.getElementById('kiosk-qr-reader') && attempts < 25) {
+        await new Promise((resolve) => setTimeout(resolve, 60));
+        attempts++;
+      }
+
+      if (!document.getElementById('kiosk-qr-reader')) {
+        console.warn('kiosk-qr-reader container not mounted in DOM yet.');
+        return;
+      }
+
+      // 2. Stop any existing scanner cleanly
       if (html5QrCodeRef.current) {
         try {
-          await html5QrCodeRef.current.stop();
+          if (html5QrCodeRef.current.isScanning) {
+            await html5QrCodeRef.current.stop();
+          }
+          html5QrCodeRef.current.clear();
         } catch (e) {}
       }
 
-      // Explicit native permission request
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video: { width: { ideal: 1280 }, height: { ideal: 720 } },
-      });
-      stream.getTracks().forEach((t) => t.stop());
-
-      const devices = await Html5Qrcode.getCameras();
-      setCameras(devices);
-      const cameraId = devices.length > 0 ? devices[0].id : { facingMode: 'user' };
+      // 3. Determine camera config: custom camera ID or facing mode (FRONT FIRST)
+      let cameraConfig;
+      if (customCameraId) {
+        cameraConfig = customCameraId;
+      } else if (selectedCameraId) {
+        cameraConfig = selectedCameraId;
+      } else {
+        cameraConfig = { facingMode: facingMode };
+      }
 
       const html5QrCode = new Html5Qrcode('kiosk-qr-reader', {
         experimentalFeatures: {
@@ -240,34 +278,150 @@ export default function ClassroomKioskScanner() {
         return { width: qrboxSize, height: qrboxSize };
       };
 
-      await html5QrCode.start(
-        cameraId,
-        {
-          fps: 25, // High responsive frame-rate
-          qrbox: qrboxFunction,
-          aspectRatio: 1.777778, // 16:9 widescreen
-        },
-        (decodedText) => {
-          handleScanProcess(decodedText, code);
-        },
-        () => {}
-      );
+      try {
+        await html5QrCode.start(
+          cameraConfig,
+          {
+            fps: 25,
+            qrbox: qrboxFunction,
+            aspectRatio: 1.777778,
+          },
+          (decodedText) => {
+            handleScanProcess(decodedText, code || activeSession?.sessionCode);
+          },
+          () => {}
+        );
+      } catch (startErr) {
+        console.warn('Initial kiosk camera start failed, retrying with fallback:', startErr);
+        if (cameraConfig && typeof cameraConfig === 'object') {
+          await html5QrCode.start(
+            { facingMode: facingMode === 'user' ? 'environment' : 'user' },
+            {
+              fps: 25,
+              qrbox: qrboxFunction,
+              aspectRatio: 1.777778,
+            },
+            (decodedText) => {
+              handleScanProcess(decodedText, code || activeSession?.sessionCode);
+            },
+            () => {}
+          );
+        } else {
+          throw startErr;
+        }
+      }
+
+      setIsScanning(true);
+
+      // 4. Query available cameras now that permission is granted
+      try {
+        const devices = await Html5Qrcode.getCameras();
+        if (devices && devices.length > 0) {
+          setCameras(devices);
+        }
+      } catch (devErr) {
+        console.warn('Device enumeration error:', devErr);
+      }
     } catch (camErr) {
       console.warn('Kiosk Camera Error:', camErr);
-      setError('Unable to activate webcam. Please allow camera permissions in your browser or use Manual Entry.');
+      const isDenied =
+        camErr?.name === 'NotAllowedError' ||
+        camErr?.name === 'PermissionDeniedError' ||
+        /denied|permission/i.test(camErr?.message || '');
+      const isInUse =
+        camErr?.name === 'NotReadableError' ||
+        /could not start video source|in use|already/i.test(camErr?.message || '');
+
+      if (isDenied) {
+        setError(
+          'Camera permission was denied in your browser. Please click the 🔒 lock or 📷 camera icon in the address bar, allow camera access, and click "Activate Camera Stream".'
+        );
+      } else if (isInUse) {
+        setError(
+          'Webcam is currently in use by another tab or program (e.g. Teacher Scanner). Please pause or close the camera in the other tab and click "Activate Camera Stream".'
+        );
+      } else {
+        setError(
+          camErr?.message ||
+            'Unable to activate webcam. Please ensure a webcam is connected and allowed, or click "Activate Camera Stream".'
+        );
+      }
       setIsScanning(false);
+    }
+  };
+
+  // Auto-start camera when active session is present
+  useEffect(() => {
+    if (!activeSession?.sessionCode) return;
+
+    let isMounted = true;
+    const timer = setTimeout(async () => {
+      if (isMounted) {
+        await startKioskCamera(activeSession.sessionCode);
+      }
+    }, 120);
+
+    return () => {
+      isMounted = false;
+      clearTimeout(timer);
+    };
+  }, [activeSession?.sessionCode]);
+
+  // Flip Camera between Front (User) and Rear (Environment)
+  const handleFlipCamera = async () => {
+    if (!activeSession) return;
+    const newMode = facingMode === 'user' ? 'environment' : 'user';
+    setFacingMode(newMode);
+
+    if (html5QrCodeRef.current) {
+      try {
+        if (html5QrCodeRef.current.isScanning) {
+          await html5QrCodeRef.current.stop();
+        }
+        html5QrCodeRef.current.clear();
+      } catch (e) {}
+    }
+
+    if (cameras.length > 1) {
+      const targetCam = cameras.find((c) =>
+        newMode === 'user'
+          ? /front|user|selfie|face/i.test(c.label)
+          : /back|rear|environment/i.test(c.label)
+      );
+
+      if (targetCam) {
+        setSelectedCameraId(targetCam.id);
+        await startKioskCamera(activeSession.sessionCode, targetCam.id);
+        return;
+      }
+
+      const currIdx = cameras.findIndex((c) => c.id === selectedCameraId);
+      const nextIdx = (currIdx + 1) % cameras.length;
+      const nextCam = cameras[nextIdx];
+      setSelectedCameraId(nextCam.id);
+      await startKioskCamera(activeSession.sessionCode, nextCam.id);
+    } else {
+      setSelectedCameraId('');
+      await startKioskCamera(activeSession.sessionCode, { facingMode: newMode });
     }
   };
 
   const stopScanner = async () => {
     if (html5QrCodeRef.current) {
       try {
-        await html5QrCodeRef.current.stop();
+        if (html5QrCodeRef.current.isScanning) {
+          await html5QrCodeRef.current.stop();
+        }
         html5QrCodeRef.current.clear();
       } catch (e) {}
     }
     setIsScanning(false);
+  };
+
+  const handleExitKiosk = async () => {
+    await stopScanner();
     setActiveSession(null);
+    setSessionCodeInput('');
   };
 
   const formatTime = (secs) => {
@@ -385,11 +539,11 @@ export default function ClassroomKioskScanner() {
                 </div>
 
                 <button
-                  onClick={stopScanner}
+                  onClick={handleExitKiosk}
                   className="px-3.5 py-2 bg-rose-600 hover:bg-rose-700 text-white rounded-xl text-xs font-semibold flex items-center gap-1.5 transition cursor-pointer"
                 >
                   <Square size={14} />
-                  <span>End Session</span>
+                  <span>Exit Kiosk</span>
                 </button>
               </div>
             </div>
@@ -408,61 +562,79 @@ export default function ClassroomKioskScanner() {
               <div className="lg:col-span-8 flex flex-col gap-4">
                 <div className="bg-slate-900 border border-slate-800 rounded-3xl p-5 flex-1 flex flex-col justify-between">
                   {/* Mode Selector */}
-                  <div className="flex justify-between items-center mb-3">
-                    <div className="flex gap-2 text-xs font-semibold">
-                      <button
-                        onClick={() => setActiveTab('webcam')}
-                        className={`px-3 py-1.5 rounded-lg flex items-center gap-1.5 cursor-pointer transition shrink-0 ${
-                          activeTab === 'webcam' ? 'bg-blue-600 text-white' : 'text-slate-400 hover:bg-slate-800'
-                        }`}
-                      >
-                        <Camera size={14} className="w-3.5 h-3.5 shrink-0" strokeWidth={2.2} />
+                  <div className="flex justify-between items-center mb-3 flex-wrap gap-2">
+                    <div className="flex gap-2 text-xs font-semibold items-center">
+                      <span className="text-slate-300 font-bold flex items-center gap-1.5">
+                        <Camera size={14} className="text-blue-400" />
                         <span>High-Speed Webcam</span>
-                      </button>
-                      <button
-                        onClick={() => setActiveTab('manual')}
-                        className={`px-3 py-1.5 rounded-lg flex items-center gap-1.5 cursor-pointer transition shrink-0 ${
-                          activeTab === 'manual' ? 'bg-blue-600 text-white' : 'text-slate-400 hover:bg-slate-800'
-                        }`}
-                      >
-                        <Keyboard size={14} className="w-3.5 h-3.5 shrink-0" strokeWidth={2.2} />
-                        <span>Manual / USB Scanner</span>
-                      </button>
+                      </span>
+
+                      {cameras.length > 1 && (
+                        <select
+                          value={selectedCameraId}
+                          onChange={(e) => {
+                            setSelectedCameraId(e.target.value);
+                            startKioskCamera(activeSession?.sessionCode, e.target.value);
+                          }}
+                          className="p-1.5 bg-slate-950 border border-slate-700 text-slate-200 text-xs rounded-lg cursor-pointer ml-2"
+                        >
+                          {cameras.map((c) => (
+                            <option key={c.id} value={c.id}>
+                              {c.label || `Camera ${c.id.substring(0, 5)}`}
+                            </option>
+                          ))}
+                        </select>
+                      )}
                     </div>
 
-                    <span className="text-[11px] text-emerald-400 font-semibold flex items-center gap-1.5">
-                      <span className="w-2 h-2 rounded-full bg-emerald-500 animate-ping" />
-                      <span>Ready for Student Passes</span>
-                    </span>
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={handleFlipCamera}
+                        className="px-2.5 py-1 bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs rounded-lg flex items-center gap-1.5 border border-slate-700 transition cursor-pointer font-semibold"
+                        title="Flip between front and rear cameras"
+                      >
+                        <SwitchCamera size={13} className="text-blue-400" />
+                        <span>Flip Camera ({facingMode === 'user' ? 'Front' : 'Back'})</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => startKioskCamera(activeSession?.sessionCode)}
+                        className="px-2.5 py-1 bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs rounded-lg flex items-center gap-1 border border-slate-700 transition cursor-pointer"
+                        title="Restart Camera"
+                      >
+                        <RefreshCw size={12} className={isScanning ? '' : 'text-amber-400 animate-spin'} />
+                        <span>Restart Camera</span>
+                      </button>
+                      <span className="text-[11px] text-emerald-400 font-semibold flex items-center gap-1.5 ml-1">
+                        <span className="w-2 h-2 rounded-full bg-emerald-500 animate-ping" />
+                        <span>Ready for Passes</span>
+                      </span>
+                    </div>
                   </div>
 
                   {/* High-Performance Camera Viewport */}
-                  {activeTab === 'webcam' ? (
-                    <div className="relative overflow-hidden rounded-2xl bg-black aspect-video flex items-center justify-center border-2 border-slate-800 shadow-2xl">
-                      <div id="kiosk-qr-reader" className="w-full h-full" />
-                    </div>
-                  ) : (
-                    <div className="p-6 bg-slate-950 rounded-2xl border border-slate-800 space-y-3">
-                      <label className="block text-xs font-semibold text-slate-300">
-                        Scan with USB Barcode Reader or Paste QR Token
-                      </label>
-                      <input
-                        type="text"
-                        autoFocus
-                        value={manualToken}
-                        onChange={(e) => setManualToken(e.target.value)}
-                        placeholder="Scan or paste student token..."
-                        className="w-full p-3 font-mono text-xs bg-slate-900 border border-slate-700 rounded-xl text-white"
-                      />
-                      <button
-                        onClick={() => handleScanProcess(manualToken.trim(), activeSession.sessionCode)}
-                        disabled={!manualToken.trim()}
-                        className="w-full py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-bold text-xs cursor-pointer disabled:opacity-50"
-                      >
-                        Submit Attendance Pass
-                      </button>
-                    </div>
-                  )}
+                  <div className="relative overflow-hidden rounded-2xl bg-black aspect-video flex items-center justify-center border-2 border-slate-800 shadow-2xl">
+                    <div id="kiosk-qr-reader" className="w-full h-full" />
+                    {!isScanning && (
+                      <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/85 text-white p-6 text-center z-10 space-y-3">
+                        <Camera size={40} className="text-slate-400 animate-pulse" />
+                        <div>
+                          <p className="text-sm font-bold text-slate-200">Camera Initializing...</p>
+                          <p className="text-xs text-slate-400 max-w-xs mt-1">
+                            If prompted, please allow camera permission in your browser.
+                          </p>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => startKioskCamera(activeSession?.sessionCode)}
+                          className="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-xl text-xs font-bold transition cursor-pointer shadow-md"
+                        >
+                          Activate Camera Stream
+                        </button>
+                      </div>
+                    )}
+                  </div>
 
                   {/* Immediate Multi-State Feedback Banner with Sound Correlated Colors */}
                   {scanFeedback && (
@@ -522,8 +694,8 @@ export default function ClassroomKioskScanner() {
                           className="flex items-center justify-between p-3 bg-slate-950 border border-slate-800 rounded-xl text-xs"
                         >
                           <div>
-                            <div className="font-bold text-white">{item.student.name}</div>
-                            <div className="text-slate-400 font-mono text-[10px]">{item.student.rollNumber}</div>
+                            <div className="font-bold text-white">{item.student?.name || 'Student'}</div>
+                            <div className="text-slate-400 font-mono text-[10px]">{item.student?.rollNumber || 'Enrolled'}</div>
                           </div>
                           <span className="text-[11px] font-semibold text-emerald-400 flex items-center gap-1 font-mono">
                             <CheckCircle2 size={12} />
