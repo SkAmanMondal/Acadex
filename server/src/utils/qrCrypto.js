@@ -1,7 +1,7 @@
 import crypto from 'crypto';
 
 const SECRET = process.env.QR_HMAC_SECRET || 'campus360_smart_attendance_hmac_secret_2026';
-const VALIDITY_WINDOW_MS = 60 * 1000; // 60 seconds rolling window
+const VALIDITY_WINDOW_MS = 15 * 1000; // 15 seconds window (5s display rotation + 10s network/scan grace)
 
 /**
  * Generates an ultra-compact, signed single-use token for student QR code.

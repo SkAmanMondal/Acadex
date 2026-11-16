@@ -19,9 +19,9 @@ export const getMyQrToken = async (req, res) => {
     }
 
     const token = generateStudentQrToken(req.user._id.toString());
-    return sendSuccess(res, 'Dynamic QR token generated (valid for 60 seconds)', {
+    return sendSuccess(res, 'Dynamic QR token generated (valid for 5 seconds)', {
       token,
-      expiresInSeconds: 60,
+      expiresInSeconds: 5,
       generatedAt: new Date(),
     });
   } catch (err) {
